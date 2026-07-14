@@ -145,7 +145,9 @@ class GatewayRouter:
                 return 200, {"count": len(clips), "clips": clips}
             if path.startswith("/api/recordings/") and path.endswith("/content") and method in ("GET", "HEAD"):
                 clip_id = unquote(path.removeprefix("/api/recordings/").removesuffix("/content"))
-                clip_path = self.runtime.recording.clip_path(clip_id)
+                clip_path = self.runtime.recording.playback_path(
+                    clip_id, self.runtime.drive_store
+                )
                 if clip_path is None:
                     return 404, {"detail": "Không tìm thấy clip"}
                 return 200, FilePayload(clip_path)

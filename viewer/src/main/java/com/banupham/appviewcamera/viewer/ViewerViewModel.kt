@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 data class ViewerUiState(
     val config: GatewayConfig = GatewayConfig(),
@@ -32,6 +33,7 @@ data class ViewerUiState(
     val recordingStatus: RecordingStatus? = null,
     val recordings: List<RecordingClip> = emptyList(),
     val selectedRecordingId: String? = null,
+    val playbackDayStartMs: Long = startOfToday(),
     val selectedCameraId: String? = null,
     val loading: Boolean = false,
     val message: String? = null
@@ -161,7 +163,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun loadRecordings(cameraId: String? = _state.value.selectedCameraId) =
         launchApiAction("Đang đọc danh sách clip…") { api ->
-            val clips = api.recordings(cameraId)
+            val dayStart = _state.value.playbackDayStartMs
+            val clips = api.recordings(cameraId, dayStart, dayStart + DAY_MS - 1)
             _state.update { current ->
                 current.copy(
                     recordings = clips,
@@ -172,6 +175,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
         }
+
+    fun changePlaybackDay(deltaDays: Int) {
+        _state.update { current ->
+            current.copy(
+                playbackDayStartMs = current.playbackDayStartMs + deltaDays * DAY_MS,
+                selectedRecordingId = null
+            )
+        }
+        loadRecordings()
+    }
 
     fun setRecordingEnabled(enabled: Boolean, retentionMinutes: Int = 60) =
         launchApiAction(if (enabled) "Đang bật ghi hình…" else "Đang tắt ghi hình…") { api ->
@@ -207,6 +220,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(message = null) }
     }
 }
+
+private const val DAY_MS = 24L * 60 * 60 * 1000
+
+private fun startOfToday(): Long = Calendar.getInstance().apply {
+    set(Calendar.HOUR_OF_DAY, 0)
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis
 
 private data class RefreshPayload(
     val gatewayStatus: GatewayStatus,

@@ -94,6 +94,7 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
                     state = state,
                     onSelectCamera = viewModel::selectCamera,
                     onRefresh = viewModel::loadRecordings,
+                    onChangeDay = viewModel::changePlaybackDay,
                     onToggleRecording = viewModel::setRecordingEnabled,
                     onSelectClip = viewModel::selectRecording
                 )
@@ -121,6 +122,7 @@ private fun PlaybackScreen(
     state: ViewerUiState,
     onSelectCamera: (String) -> Unit,
     onRefresh: (String?) -> Unit,
+    onChangeDay: (Int) -> Unit,
     onToggleRecording: (Boolean, Int) -> Unit,
     onSelectClip: (String) -> Unit
 ) {
@@ -139,6 +141,10 @@ private fun PlaybackScreen(
                         style = MaterialTheme.typography.titleMedium
                     )
                     recording?.let {
+                        Text("Drive: ${it.uploadedClips} đã tải lên • ${it.pendingUploads} đang chờ • ${it.failedUploads} lỗi")
+                        it.lastUploadError?.let { error ->
+                            Text(error, color = MaterialTheme.colorScheme.error)
+                        }
                         Text("Giữ clip cục bộ ${it.localRetentionMinutes} phút • còn ${formatBytes(it.diskFreeBytes)}")
                     }
                     Button(
@@ -146,6 +152,17 @@ private fun PlaybackScreen(
                     ) { Text(if (recording?.enabled == true) "Tắt ghi hình" else "Bật ghi hình") }
                     Text("Clip đầu tiên xuất hiện sau khi segment 60 giây hoàn tất.")
                 }
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = { onChangeDay(-1) }) { Text("Ngày trước") }
+                Text(formatRecordingDay(state.playbackDayStartMs), style = MaterialTheme.typography.titleMedium)
+                OutlinedButton(onClick = { onChangeDay(1) }) { Text("Ngày sau") }
             }
         }
         item {
@@ -181,6 +198,8 @@ private fun PlaybackScreen(
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(formatRecordingTime(clip.startedAtMs), style = MaterialTheme.typography.titleMedium)
                     Text("${formatDuration(clip.durationMs)} • ${formatBytes(clip.sizeBytes)}")
+                    Text(uploadStateText(clip.uploadState, clip.localState))
+                    clip.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     OutlinedButton(onClick = { onSelectClip(clip.id) }) { Text("Phát clip") }
                 }
             }
@@ -190,6 +209,16 @@ private fun PlaybackScreen(
 
 private fun formatRecordingTime(value: Long): String =
     SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(value))
+
+private fun formatRecordingDay(value: Long): String =
+    SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(value))
+
+private fun uploadStateText(uploadState: String, localState: String): String = when (uploadState) {
+    "UPLOADED" -> if (localState == "AVAILABLE") "Đã lưu Drive • còn bản trên máy" else "Đã lưu Drive • phát qua bộ nhớ đệm"
+    "UPLOADING" -> "Đang tải lên Google Drive"
+    "FAILED" -> "Tải Drive lỗi • Gateway sẽ tự thử lại"
+    else -> "Đang chờ tải lên Google Drive"
+}
 
 private fun formatDuration(value: Long?): String {
     if (value == null) return "Chưa rõ thời lượng"

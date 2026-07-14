@@ -6,6 +6,7 @@ import asyncio
 import logging
 import shutil
 import subprocess
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +41,7 @@ class RecordingManager:
         self.settings = settings
         self.database = database
         self.config_path = settings.home / "config" / "recording.json"
+        self._playback_lock = threading.RLock()
 
     def config(self) -> dict[str, Any]:
         return load_recording_config(self.settings)
@@ -115,6 +117,42 @@ class RecordingManager:
         if self.root not in path.parents or not path.is_file():
             return None
         return path
+
+    def playback_path(self, clip_id: str, drive_store: GoogleDriveStore) -> Path | None:
+        local = self.clip_path(clip_id)
+        if local is not None:
+            return local
+        clip = self.database.get_clip(clip_id)
+        if not clip or clip.get("upload_state") != "UPLOADED":
+            return None
+        remote_id = str(clip.get("remote_id") or "")
+        remote_path = str(clip.get("remote_path") or "")
+        if not remote_id or not remote_path:
+            return None
+        cache = self.settings.home / "cache" / "playback" / f"{clip_id}.mp4"
+        with self._playback_lock:
+            if cache.is_file() and cache.stat().st_size > 0:
+                cache.touch()
+                return cache
+            drive_store.download_file(remote_id, remote_path, cache)
+            self._trim_playback_cache(keep=cache)
+            return cache
+
+    def _trim_playback_cache(self, keep: Path, max_bytes: int = 2 * 1024**3) -> None:
+        cache_root = keep.parent
+        files = [path for path in cache_root.glob("*.mp4") if path.is_file()]
+        total = sum(path.stat().st_size for path in files)
+        for path in sorted(files, key=lambda item: item.stat().st_mtime_ns):
+            if total <= max_bytes:
+                break
+            if path == keep:
+                continue
+            try:
+                size = path.stat().st_size
+                path.unlink()
+                total -= size
+            except OSError:
+                continue
 
     @staticmethod
     def _parse_started_at(path: Path) -> int | None:

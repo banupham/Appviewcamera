@@ -84,12 +84,18 @@ object GatewayJsonParser {
 
     fun recordingStatus(payload: String): RecordingStatus {
         val root = JSONObject(payload)
+        val uploads = root.optJSONObject("upload_counts")
         return RecordingStatus(
             enabled = root.optBoolean("enabled", false),
             localRetentionMinutes = root.optInt("local_retention_minutes", 60),
             clipCount = root.optInt("clip_count", 0),
             diskFreeBytes = root.optLong("disk_free_bytes", 0),
-            diskTotalBytes = root.optLong("disk_total_bytes", 0)
+            diskTotalBytes = root.optLong("disk_total_bytes", 0),
+            pendingUploads = uploads?.optInt("PENDING", 0) ?: 0,
+            failedUploads = uploads?.optInt("FAILED", 0) ?: 0,
+            uploadedClips = uploads?.optInt("UPLOADED", 0) ?: 0,
+            lastUploadError = root.optString("last_upload_error")
+                .takeIf { it.isNotBlank() && it != "null" }
         )
     }
 
@@ -104,7 +110,12 @@ object GatewayJsonParser {
                         cameraId = item.getString("camera_id"),
                         startedAtMs = item.getLong("started_at_ms"),
                         durationMs = item.optionalLong("duration_ms"),
-                        sizeBytes = item.getLong("size_bytes")
+                        sizeBytes = item.getLong("size_bytes"),
+                        localState = item.optString("local_state", "AVAILABLE"),
+                        uploadState = item.optString("upload_state", "PENDING"),
+                        lastError = item.optString("last_error")
+                            .takeIf { it.isNotBlank() && it != "null" },
+                        protected = item.optBoolean("protected", false)
                     )
                 )
             }

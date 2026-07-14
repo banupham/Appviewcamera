@@ -35,13 +35,15 @@ class GatewayJsonParserTest {
     @Test
     fun parsesRecordingStatusAndClips() {
         val status = GatewayJsonParser.recordingStatus(
-            """{"enabled":true,"local_retention_minutes":60,"clip_count":1,"disk_free_bytes":5000,"disk_total_bytes":10000}"""
+            """{"enabled":true,"local_retention_minutes":60,"clip_count":1,"disk_free_bytes":5000,"disk_total_bytes":10000,"upload_counts":{"PENDING":1,"FAILED":0,"UPLOADED":2}}"""
         )
         val clips = GatewayJsonParser.recordings(
-            """{"count":1,"clips":[{"id":"abc","camera_id":"camera01","started_at_ms":1000,"duration_ms":60000,"size_bytes":1234}]}"""
+            """{"count":1,"clips":[{"id":"abc","camera_id":"camera01","started_at_ms":1000,"duration_ms":60000,"size_bytes":1234,"local_state":"MISSING","upload_state":"UPLOADED"}]}"""
         )
         assertEquals(true, status.enabled)
         assertEquals(60_000L, clips.single().durationMs)
         assertEquals("camera01", clips.single().cameraId)
+        assertEquals(1, status.pendingUploads)
+        assertEquals("UPLOADED", clips.single().uploadState)
     }
 }

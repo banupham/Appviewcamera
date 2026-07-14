@@ -69,7 +69,11 @@ data class RecordingStatus(
     val localRetentionMinutes: Int,
     val clipCount: Int,
     val diskFreeBytes: Long,
-    val diskTotalBytes: Long
+    val diskTotalBytes: Long,
+    val pendingUploads: Int,
+    val failedUploads: Int,
+    val uploadedClips: Int,
+    val lastUploadError: String?
 )
 
 data class RecordingClip(
@@ -77,5 +81,9 @@ data class RecordingClip(
     val cameraId: String,
     val startedAtMs: Long,
     val durationMs: Long?,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    val localState: String,
+    val uploadState: String,
+    val lastError: String?,
+    val protected: Boolean
 )

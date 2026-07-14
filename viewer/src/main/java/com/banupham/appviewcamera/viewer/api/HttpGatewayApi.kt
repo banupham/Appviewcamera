@@ -77,8 +77,13 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         return GatewayJsonParser.recordingStatus(request("PUT", "/api/recording", body, STORAGE_TIMEOUT_MS))
     }
 
-    override suspend fun recordings(cameraId: String?): List<RecordingClip> {
-        val suffix = cameraId?.let { "?camera_id=${encode(it)}" }.orEmpty()
+    override suspend fun recordings(cameraId: String?, fromMs: Long?, toMs: Long?): List<RecordingClip> {
+        val parameters = buildList {
+            cameraId?.let { add("camera_id=${encode(it)}") }
+            fromMs?.let { add("from_ms=$it") }
+            toMs?.let { add("to_ms=$it") }
+        }
+        val suffix = parameters.takeIf { it.isNotEmpty() }?.joinToString("&", prefix = "?").orEmpty()
         return GatewayJsonParser.recordings(request("GET", "/api/recordings$suffix", readTimeoutMs = STORAGE_TIMEOUT_MS))
     }
 

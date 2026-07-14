@@ -13,5 +13,5 @@ interface GatewayApi {
     suspend fun deleteDrive(driveId: String)
     suspend fun recordingStatus(): RecordingStatus
     suspend fun updateRecording(enabled: Boolean, localRetentionMinutes: Int): RecordingStatus
-    suspend fun recordings(cameraId: String? = null): List<RecordingClip>
+    suspend fun recordings(cameraId: String? = null, fromMs: Long? = null, toMs: Long? = null): List<RecordingClip>
 }
