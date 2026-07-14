@@ -42,6 +42,9 @@ Script tự kiểm tra đúng repo `banupham/Appviewcamera`, đúng nhánh `main
 script mới rồi stop/install/start Gateway. Nếu phát hiện installer cũ còn pip, Pydantic hoặc maturin, script dừng trước
 khi thay đổi bản đang hoạt động. Các file trong `~/appviewcamera/config` được giữ nguyên.
 
+Checksum MediaMTX hỗ trợ cả định dạng GNU (`hash *filename`) và định dạng hai khoảng trắng (`hash  filename`).
+`status.sh` luôn trả JSON, kể cả khi process dừng hoặc API chưa mở cổng.
+
 Dừng dịch vụ:
 
 ```bash

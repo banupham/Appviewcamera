@@ -10,7 +10,7 @@ if ! command -v pkg >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[1/6] Cài gói Termux"
+echo "[1/5] Cài gói Termux"
 pkg install -y python curl tar ffmpeg rclone
 
 echo "[2/5] Tạo thư mục $APP_HOME"
@@ -54,9 +54,21 @@ TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 curl --fail --location --retry 3 --output "$TEMP_DIR/$ARCHIVE" "$BASE_URL/$ARCHIVE"
 curl --fail --location --retry 3 --output "$TEMP_DIR/checksums.sha256" "$BASE_URL/checksums.sha256"
-EXPECTED="$(grep "  $ARCHIVE\$" "$TEMP_DIR/checksums.sha256")"
-[ -n "$EXPECTED" ] || { echo "Không tìm thấy checksum của $ARCHIVE" >&2; exit 1; }
-(cd "$TEMP_DIR" && printf '%s\n' "$EXPECTED" | sha256sum --check -)
+EXPECTED_HASH="$(awk -v archive="$ARCHIVE" '
+  {
+    name = $2
+    sub(/^\*/, "", name)
+    if (name == archive) {
+      print $1
+      exit
+    }
+  }
+' "$TEMP_DIR/checksums.sha256")"
+if ! printf '%s\n' "$EXPECTED_HASH" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+  echo "Không tìm thấy checksum hợp lệ của $ARCHIVE" >&2
+  exit 1
+fi
+(cd "$TEMP_DIR" && printf '%s  %s\n' "$EXPECTED_HASH" "$ARCHIVE" | sha256sum --check -)
 tar -xzf "$TEMP_DIR/$ARCHIVE" -C "$TEMP_DIR"
 install -m 700 "$TEMP_DIR/mediamtx" "$APP_HOME/bin/mediamtx"
 
