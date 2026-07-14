@@ -23,6 +23,12 @@ if [ "${APPVIEWCAMERA_UPDATE_AFTER_PULL:-0}" != "1" ] && \
     echo "Lỗi: source đang ở nhánh '$BRANCH', cần nhánh main." >&2
     exit 1
   fi
+  if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]; then
+    STASH_NAME="appviewcamera-auto-update-$(date -u +%Y%m%dT%H%M%SZ)"
+    echo "[update] Cất thay đổi source cục bộ vào git stash: $STASH_NAME"
+    git -C "$REPO_ROOT" stash push --message "$STASH_NAME"
+    echo "[update] Có thể xem lại bằng: git -C $REPO_ROOT stash list"
+  fi
   echo "[update] Kéo mã mới nhất từ origin/main"
   git -C "$REPO_ROOT" pull --ff-only origin main
   APPVIEWCAMERA_UPDATE_AFTER_PULL=1 exec "$SOURCE_DIR/scripts/update.sh"
