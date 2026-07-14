@@ -2,8 +2,8 @@
 
 1. ✅ Khởi tạo project và APK tối thiểu.
 2. ✅ Quản lý camera và kiểm tra RTSP.
-3. 🔄 Termux Gateway, tự tìm camera và RTSP relay.
-4. Viewer xem live qua LAN.
+3. ✅ Termux Gateway, tự tìm camera và RTSP relay (đã kiểm thử ARM64/H.264 1080p30).
+4. 🔄 Viewer quản trị camera và xem live qua LAN.
 5. Viewer xem qua Tailscale.
 6. Ghi video, kiểm tra clip và phục hồi mất mạng.
 7. Phát hiện chuyển động.

@@ -14,7 +14,8 @@ Camera IP --RTSP/LAN--> Termux Gateway --RTSP/API/Tailscale--> Viewer APK
 
 - Giai đoạn 1: project Android và hai APK tối thiểu — hoàn thành.
 - Giai đoạn 2: quản lý camera và kiểm tra RTSP trong Gateway APK thử nghiệm — hoàn thành.
-- Giai đoạn 3: chuyển Gateway runtime sang Termux, tự quét LAN và relay MediaMTX — đang thực hiện.
+- Giai đoạn 3: Termux Gateway, tự quét LAN và relay MediaMTX — hoàn thành trên thiết bị ARM64.
+- Giai đoạn 4: Viewer quản trị camera và xem RTSP relay qua LAN — đang thực hiện.
 
 Gateway APK cũ đang được giữ làm bản đối chiếu cho đến khi Termux Gateway được kiểm thử trên
 điện thoại thật. Viewer APK tiếp tục được phát triển và build trên GitHub.
@@ -49,5 +50,6 @@ GitHub Actions.
 - [Giai đoạn 1](docs/phase-1.md)
 - [Giai đoạn 2](docs/phase-2.md)
 - [Giai đoạn 3](docs/phase-3-termux.md)
+- [Giai đoạn 4](docs/phase-4-viewer-live.md)
 - [Database schema](docs/database-schema.md)
 - [Roadmap](docs/roadmap.md)
