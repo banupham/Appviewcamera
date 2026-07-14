@@ -23,7 +23,7 @@ jobs:
           cache: gradle
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
@@ -35,14 +35,14 @@ jobs:
         run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
 
       - name: Upload Gateway APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gateway-debug.apk
           path: gateway/build/outputs/apk/debug/gateway-debug.apk
           if-no-files-found: error
 
       - name: Upload Viewer APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: viewer-debug.apk
           path: viewer/build/outputs/apk/debug/viewer-debug.apk
@@ -50,7 +50,7 @@ jobs:
 
       - name: Upload reports after failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-build-reports
           path: |
