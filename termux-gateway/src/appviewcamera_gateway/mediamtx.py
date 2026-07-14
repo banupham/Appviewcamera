@@ -51,7 +51,8 @@ def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> di
                 "recordFormat": "fmp4",
                 "recordPartDuration": f"{recording['part_duration_seconds']}s",
                 "recordSegmentDuration": f"{recording['segment_duration_seconds']}s",
-                "recordDeleteAfter": f"{recording['local_retention_minutes']}m",
+                # Custom retention only removes clips after a verified Drive upload.
+                "recordDeleteAfter": "0s",
             }
     return {
         "logLevel": "info",

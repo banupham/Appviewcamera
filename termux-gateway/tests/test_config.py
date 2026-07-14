@@ -62,4 +62,4 @@ def test_mediamtx_records_substream_only_when_globally_enabled(gateway_home):
     assert record_path["source"].endswith("/sub")
     assert record_path["record"] is True
     assert record_path["recordSegmentDuration"] == "60s"
-    assert record_path["recordDeleteAfter"] == "60m"
+    assert record_path["recordDeleteAfter"] == "0s"

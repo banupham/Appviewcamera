@@ -19,7 +19,7 @@ from .database import GatewayDatabase
 from .discovery import discover_cameras
 from .mediamtx import MediaMtxSupervisor
 from .storage import GoogleDriveStore
-from .recording import RecordingManager
+from .recording import RecordingManager, RecordingWorker
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
@@ -39,16 +39,21 @@ class GatewayRuntime:
         self.mediamtx = MediaMtxSupervisor(settings, self.camera_store)
         self.drive_store = GoogleDriveStore(settings.home)
         self.recording = RecordingManager(settings, self.database)
+        self.recording_worker = RecordingWorker(
+            self.recording, self.database, self.drive_store, self.camera_store.list
+        )
         self.discovery_lock = asyncio.Lock()
         self.discovery_task: asyncio.Task | None = None
         self.last_discovery_error: str | None = None
 
     async def start(self) -> None:
         await self.mediamtx.start()
+        self.recording_worker.start()
         if self.settings.discovery_enabled:
             self.discovery_task = asyncio.create_task(self._periodic_discovery(), name="camera-discovery")
 
     async def stop(self) -> None:
+        await self.recording_worker.stop()
         if self.discovery_task:
             self.discovery_task.cancel()
             await asyncio.gather(self.discovery_task, return_exceptions=True)
@@ -118,7 +123,10 @@ class GatewayRouter:
                     str(request.get("oauth_token", "")),
                 )
             if method == "GET" and path == "/api/recording":
-                return 200, self.runtime.recording.status()
+                return 200, {
+                    **self.runtime.recording.status(),
+                    **self.runtime.recording_worker.status(),
+                }
             if method == "PUT" and path == "/api/recording":
                 request = json.loads(body.decode("utf-8"))
                 result = self.runtime.recording.update(

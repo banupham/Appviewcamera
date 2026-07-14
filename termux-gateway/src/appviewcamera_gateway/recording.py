@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import asyncio
+import logging
 import shutil
 import subprocess
 import time
@@ -11,6 +13,10 @@ from typing import Any
 
 from .config import GatewaySettings, _atomic_json, _read_json
 from .database import GatewayDatabase
+from .storage import GoogleDriveStore
+
+
+LOGGER = logging.getLogger("appviewcamera.recording")
 
 
 def load_recording_config(settings: GatewaySettings) -> dict[str, Any]:
@@ -22,6 +28,9 @@ def load_recording_config(settings: GatewaySettings) -> dict[str, Any]:
         "segment_duration_seconds": max(10, min(3600, int(recording.get("segment_duration_seconds", 60)))),
         "part_duration_seconds": max(1, min(10, int(recording.get("part_duration_seconds", 1)))),
         "local_retention_minutes": max(5, min(10080, int(recording.get("local_retention_minutes", 60)))),
+        "uploaded_local_retention_minutes": max(
+            0, min(10080, int(recording.get("uploaded_local_retention_minutes", 60)))
+        ),
         "prefer_substream": bool(recording.get("prefer_substream", True)),
     }
 
@@ -77,10 +86,10 @@ class RecordingManager:
             if camera_id not in camera_ids:
                 continue
             stat = path.stat()
+            seen.add(relative)
             # Bỏ qua segment còn đang được MediaMTX ghi.
             if now_ns - stat.st_mtime_ns < 2_000_000_000:
                 continue
-            seen.add(relative)
             existing = self.database.find_clip_by_path(relative)
             if existing and existing["size_bytes"] == stat.st_size and existing["modified_ns"] == stat.st_mtime_ns:
                 continue
@@ -95,7 +104,7 @@ class RecordingManager:
                 "modified_ns": stat.st_mtime_ns,
             }
             self.database.upsert_clip(clip)
-        self.database.delete_missing_clips(seen)
+        self.database.mark_missing_clips(seen)
         return self.database.list_clips(limit=200)
 
     def clip_path(self, clip_id: str) -> Path | None:
@@ -134,3 +143,89 @@ class RecordingManager:
             return max(0, int(float(duration) * 1000)) if duration is not None else None
         except (OSError, subprocess.TimeoutExpired, ValueError, json.JSONDecodeError):
             return None
+
+
+class RecordingWorker:
+    """Indexes clips, uploads them durably and applies safe local retention."""
+
+    def __init__(
+        self,
+        manager: RecordingManager,
+        database: GatewayDatabase,
+        drive_store: GoogleDriveStore,
+        camera_provider,
+    ):
+        self.manager = manager
+        self.database = database
+        self.drive_store = drive_store
+        self.camera_provider = camera_provider
+        self.task: asyncio.Task | None = None
+        self.last_error: str | None = None
+
+    def start(self) -> None:
+        self.database.reset_interrupted_uploads()
+        self.task = asyncio.create_task(self._run(), name="recording-upload")
+
+    async def stop(self) -> None:
+        if self.task:
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)
+            self.task = None
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "upload_counts": self.database.upload_counts(),
+            "last_upload_error": self.last_error,
+        }
+
+    async def _run(self) -> None:
+        await asyncio.sleep(3)
+        while True:
+            try:
+                await asyncio.to_thread(self.run_once)
+                self.last_error = None
+            except Exception as error:
+                self.last_error = str(error)
+                LOGGER.exception("Recording worker failed")
+            await asyncio.sleep(15)
+
+    def run_once(self) -> None:
+        self.manager.scan(self.camera_provider())
+        account = self.drive_store.active_account()
+        if account:
+            pending = self.database.pending_clips(int(time.time() * 1000), limit=1)
+            if pending:
+                self._upload(pending[0], str(account["id"]))
+        self._apply_retention()
+
+    def _upload(self, clip: dict, remote_id: str) -> None:
+        local_path = self.manager.clip_path(str(clip["id"]))
+        if local_path is None:
+            self.database.mark_local_missing(str(clip["id"]))
+            return
+        remote_path = f"{self.drive_store.remote_root()}/{clip['relative_path']}"
+        self.database.mark_uploading(str(clip["id"]), remote_id, remote_path)
+        try:
+            self.drive_store.upload_file(remote_id, local_path, remote_path)
+            self.database.mark_uploaded(str(clip["id"]), int(time.time() * 1000))
+        except Exception as error:
+            attempts = int(clip.get("upload_attempts", 0)) + 1
+            schedule = self.drive_store.retry_seconds()
+            delay = schedule[min(attempts - 1, len(schedule) - 1)]
+            self.database.mark_upload_failed(
+                str(clip["id"]), str(error), int(time.time() * 1000) + delay * 1000
+            )
+            raise
+
+    def _apply_retention(self) -> None:
+        retention_ms = self.manager.config()["local_retention_minutes"] * 60_000
+        before_ms = int(time.time() * 1000) - retention_ms
+        for clip in self.database.uploaded_local_clips_before(before_ms):
+            path = self.manager.clip_path(str(clip["id"]))
+            if path is not None:
+                try:
+                    path.unlink()
+                except OSError as error:
+                    LOGGER.warning("Cannot remove uploaded clip %s: %s", path, error)
+                    continue
+            self.database.mark_local_missing(str(clip["id"]))

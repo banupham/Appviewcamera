@@ -125,6 +125,103 @@ class GoogleDriveStore:
             _atomic_json(self.metadata_path, raw)
             return self._public_account(account, {normalized_id})
 
+    def active_account(self) -> dict[str, Any] | None:
+        accounts = self.list()
+        return next(
+            (account for account in accounts if account["active"] and account["configured"]),
+            next((account for account in accounts if account["configured"]), None),
+        )
+
+    def retry_seconds(self) -> list[int]:
+        policy = self._read_metadata().get("policy", {})
+        raw = policy.get("retry_seconds", [60, 300, 900, 3600])
+        values = [max(10, int(value)) for value in raw if isinstance(value, (int, float))]
+        return values or [60, 300, 900, 3600]
+
+    def remote_root(self) -> str:
+        policy = self._read_metadata().get("policy", {})
+        return self._safe_remote_path(str(policy.get("remote_root", "CameraBackup")))
+
+    def upload_file(self, remote_id: str, local_path: Path, remote_path: str) -> None:
+        normalized_id = self._require_remote(remote_id)
+        safe_path = self._safe_remote_path(remote_path)
+        completed = self._run_rclone(
+            "copyto", str(local_path), f"{normalized_id}:{safe_path}",
+            "--transfers", "1", "--checkers", "2", "--retries", "1",
+            "--low-level-retries", "2", timeout=600,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(self._rclone_error(completed))
+        stat = self.remote_stat(normalized_id, safe_path)
+        if int(stat.get("Size", -1)) != local_path.stat().st_size:
+            raise RuntimeError("Kích thước file trên Google Drive không khớp bản cục bộ")
+
+    def download_file(self, remote_id: str, remote_path: str, local_path: Path) -> None:
+        normalized_id = self._require_remote(remote_id)
+        safe_path = self._safe_remote_path(remote_path)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = local_path.with_suffix(local_path.suffix + ".part")
+        try:
+            completed = self._run_rclone(
+                "copyto", f"{normalized_id}:{safe_path}", str(temporary),
+                "--transfers", "1", "--checkers", "2", "--retries", "2",
+                "--low-level-retries", "3", timeout=600,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(self._rclone_error(completed))
+            remote_size = int(self.remote_stat(normalized_id, safe_path).get("Size", -1))
+            if not temporary.is_file() or temporary.stat().st_size != remote_size:
+                raise RuntimeError("File tải từ Google Drive chưa đầy đủ")
+            temporary.replace(local_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def remote_stat(self, remote_id: str, remote_path: str) -> dict[str, Any]:
+        normalized_id = self._require_remote(remote_id)
+        safe_path = self._safe_remote_path(remote_path)
+        completed = self._run_rclone(
+            "lsjson", f"{normalized_id}:{safe_path}", "--stat", "--no-mimetype",
+            "--no-modtime", timeout=90,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(self._rclone_error(completed))
+        try:
+            value = json.loads(completed.stdout or "{}")
+        except json.JSONDecodeError as error:
+            raise RuntimeError("rclone trả về thông tin file không hợp lệ") from error
+        if not isinstance(value, dict) or value.get("IsDir") is True:
+            raise RuntimeError("Không tìm thấy file trên Google Drive")
+        return value
+
+    def _run_rclone(self, *arguments: str, timeout: int) -> subprocess.CompletedProcess[str]:
+        return self.runner(
+            ["rclone", "--config", str(self.rclone_config_path), *arguments],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+    def _require_remote(self, remote_id: str) -> str:
+        normalized_id = remote_id.lower().strip()
+        if not REMOTE_ID_PATTERN.fullmatch(normalized_id):
+            raise ValueError("ID Google Drive không hợp lệ")
+        if normalized_id not in self._drive_remote_ids():
+            raise ValueError("Tài khoản Google Drive chưa được cấu hình")
+        return normalized_id
+
+    @staticmethod
+    def _safe_remote_path(remote_path: str) -> str:
+        normalized = remote_path.replace("\\", "/").strip("/")
+        parts = normalized.split("/")
+        if not normalized or any(part in ("", ".", "..") for part in parts):
+            raise ValueError("Đường dẫn Google Drive không hợp lệ")
+        return "/".join(parts)
+
+    @staticmethod
+    def _rclone_error(completed: subprocess.CompletedProcess[str]) -> str:
+        return (completed.stderr or completed.stdout or "rclone thất bại").strip()[-500:]
+
     def _read_metadata(self) -> dict[str, Any]:
         raw = _read_json(
             self.metadata_path,
