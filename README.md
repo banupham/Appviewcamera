@@ -54,4 +54,4 @@ GitHub Actions chạy cùng các lệnh và tải hai APK thành artifacts `gate
 4. Xem IP `100.x.x.x` của Gateway trong ứng dụng Tailscale; thiết bị có CLI có thể chạy `tailscale ip -4`.
 5. Không mở port trên router. Các giai đoạn sau sẽ cho Viewer cấu hình IP này, không hard-code trong source.
 
-Xem [báo cáo Giai đoạn 1](docs/phase-1.md), [báo cáo Giai đoạn 2](docs/phase-2.md), [database schema](docs/database-schema.md) và [kế hoạch triển khai](docs/roadmap.md).
+Xem [báo cáo Giai đoạn 1](docs/phase-1.md), [báo cáo Giai đoạn 2](docs/phase-2.md), [xác nhận build](docs/build-verification.md), [database schema](docs/database-schema.md) và [kế hoạch triển khai](docs/roadmap.md).

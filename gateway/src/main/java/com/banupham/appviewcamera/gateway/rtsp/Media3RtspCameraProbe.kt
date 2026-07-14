@@ -18,7 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-@OptIn(UnstableApi::class)
+@UnstableApi
 class Media3RtspCameraProbe(
     context: Context,
     private val credentialCipher: CredentialCipher,

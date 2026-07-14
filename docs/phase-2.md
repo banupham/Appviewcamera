@@ -24,7 +24,7 @@
 
 ## Giới hạn hiện tại
 
-- Chưa chạy được test/build local do máy thiếu JDK và Android SDK.
+- Unit test và debug build đã chạy thành công local ngày 2026-07-14 bằng JDK 17, Android SDK 35 và Gradle 8.9.
 - Bitrate chỉ hiển thị khi RTSP/SDP/decoder cung cấp; đo byte trong 60 giây thuộc giai đoạn Storage Estimator.
 - Chưa có snapshot hoặc xem live trong Gateway.
 - Chưa chạy Foreground Service, MediaMTX hoặc RTSP relay; đây là Giai đoạn 3.
@@ -36,3 +36,11 @@
 .\gradlew.bat :gateway:testDebugUnitTest
 .\gradlew.bat :gateway:assembleDebug
 ```
+
+Lần xác nhận đầy đủ đã chạy:
+
+```powershell
+.\gradlew.bat test :gateway:assembleDebug :viewer:assembleDebug --stacktrace --console=plain
+```
+
+Kết quả: `BUILD SUCCESSFUL`, 136 tasks thực thi.
