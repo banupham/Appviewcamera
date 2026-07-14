@@ -15,18 +15,36 @@ ONVIF_MULTICAST = ("239.255.255.250", 3702)
 XADDRS_PATTERN = re.compile(r"<[^>]*XAddrs[^>]*>(.*?)</[^>]*XAddrs>", re.DOTALL)
 
 
-def detect_ipv4_subnet() -> str | None:
+def detect_ipv4_address() -> str | None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(("1.1.1.1", 53))
         address = sock.getsockname()[0]
         if address.startswith("127."):
             return None
-        return str(ipaddress.ip_network(f"{address}/24", strict=False))
+        return address
     except OSError:
         return None
     finally:
         sock.close()
+
+
+def detect_ipv4_subnet() -> str | None:
+    address = detect_ipv4_address()
+    return str(ipaddress.ip_network(f"{address}/24", strict=False)) if address else None
+
+
+def local_ipv4_addresses() -> set[str]:
+    addresses = {"127.0.0.1"}
+    detected = detect_ipv4_address()
+    if detected:
+        addresses.add(detected)
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addresses.add(item[4][0])
+    except OSError:
+        pass
+    return addresses
 
 
 def _candidate_from_url(url: str) -> dict | None:
@@ -106,6 +124,7 @@ async def scan_subnets(
     ports: tuple[int, ...],
     timeout_seconds: float,
     concurrency: int = 64,
+    excluded_hosts: set[str] | None = None,
 ) -> list[dict]:
     semaphore = asyncio.Semaphore(concurrency)
     found: list[dict] = []
@@ -123,10 +142,12 @@ async def scan_subnets(
                     writer.close()
                     await writer.wait_closed()
 
+    excluded = excluded_hosts or set()
     tasks = [
         asyncio.create_task(probe(str(host), port))
         for network in networks
         for host in network.hosts()
+        if str(host) not in excluded
         for port in ports
     ]
     if tasks:
@@ -135,11 +156,19 @@ async def scan_subnets(
 
 
 async def discover_cameras(settings: GatewaySettings) -> list[dict]:
+    local_addresses = local_ipv4_addresses()
     onvif = await asyncio.to_thread(discover_onvif, min(3.0, settings.discovery_timeout_seconds * 4))
     networks = normalize_subnets(settings.discovery_subnets, settings.discovery_max_hosts)
-    scanned = await scan_subnets(networks, settings.discovery_ports, settings.discovery_timeout_seconds)
+    scanned = await scan_subnets(
+        networks,
+        settings.discovery_ports,
+        settings.discovery_timeout_seconds,
+        excluded_hosts=local_addresses,
+    )
     merged: dict[tuple[str, int], dict] = {}
     for candidate in scanned + onvif:
+        if candidate["host"] in local_addresses:
+            continue
         merged[(candidate["host"], candidate["port"])] = candidate
     def sort_key(item: dict) -> tuple:
         try:
