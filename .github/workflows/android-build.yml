@@ -25,6 +25,14 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
+      # Debug APKs are device-test artifacts. Keeping this key stable allows the
+      # next GitHub build to be installed over the previous test build.
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: appviewcamera-android-debug-keystore-v1
+
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
