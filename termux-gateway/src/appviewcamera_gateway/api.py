@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
-from contextlib import asynccontextmanager
+import threading
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from typing import Any, Coroutine
+from urllib.parse import unquote, urlsplit
 
 from . import __version__
 from .config import CameraStore, GatewaySettings
@@ -18,23 +19,6 @@ from .mediamtx import MediaMtxSupervisor
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
-BEARER = HTTPBearer(auto_error=False)
-
-
-class CameraRequest(BaseModel):
-    id: str
-    name: str = ""
-    host: str
-    port: int = Field(default=554, ge=1, le=65535)
-    username: str = ""
-    password: str | None = None
-    main_path: str
-    sub_path: str = ""
-    relay_path: str = ""
-    enabled: bool = True
-    record_enabled: bool = True
-    motion_enabled: bool = False
-    audio_enabled: bool = True
 
 
 class GatewayRuntime:
@@ -82,89 +66,125 @@ class GatewayRuntime:
             await asyncio.sleep(self.settings.discovery_interval_seconds)
 
 
-def create_app(home: Path | None = None) -> FastAPI:
-    settings = GatewaySettings.load(home)
-    runtime = GatewayRuntime(settings)
+class GatewayRouter:
+    def __init__(self, runtime: GatewayRuntime, loop: asyncio.AbstractEventLoop):
+        self.runtime = runtime
+        self.loop = loop
 
-    @asynccontextmanager
-    async def lifespan(_: FastAPI):
-        await runtime.start()
-        try:
-            yield
-        finally:
-            await runtime.stop()
-
-    app = FastAPI(title="AppViewCamera Gateway", version=__version__, lifespan=lifespan)
-    app.state.runtime = runtime
-
-    async def authorize(credentials: HTTPAuthorizationCredentials | None = Depends(BEARER)) -> None:
-        expected = settings.api_token
-        supplied = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else ""
+    def route(self, method: str, raw_path: str, authorization: str, body: bytes = b"") -> tuple[int, Any]:
+        path = urlsplit(raw_path).path
+        if method == "GET" and path == "/health":
+            return 200, {"status": "ok", "version": __version__}
+        expected = self.runtime.settings.api_token
+        supplied = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
         if not expected:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Gateway chưa có API_TOKEN")
+            return 503, {"detail": "Gateway chưa có API_TOKEN"}
         if not hmac.compare_digest(expected, supplied):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Bearer token không hợp lệ")
-
-    @app.get("/health")
-    async def health() -> dict:
-        return {"status": "ok", "version": __version__}
-
-    @app.get("/api/status", dependencies=[Depends(authorize)])
-    async def gateway_status() -> dict:
-        return {
-            "status": "ONLINE",
-            "version": __version__,
-            "camera_count": len(runtime.camera_store.list()),
-            "candidate_count": len(runtime.database.list_candidates()),
-            "discovery_running": runtime.discovery_lock.locked(),
-            "last_discovery_error": runtime.last_discovery_error,
-            "mediamtx": runtime.mediamtx.status(),
-        }
-
-    @app.get("/api/cameras", dependencies=[Depends(authorize)])
-    async def list_cameras() -> list[dict]:
-        return runtime.camera_store.list()
-
-    @app.put("/api/cameras/{camera_id}", dependencies=[Depends(authorize)])
-    async def save_camera(camera_id: str, request: CameraRequest) -> dict:
-        if camera_id != request.id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "camera_id không khớp nội dung")
+            return 401, {"detail": "Bearer token không hợp lệ"}
         try:
-            saved = await asyncio.to_thread(
-                runtime.camera_store.upsert,
-                request.model_dump(exclude={"password"}),
-                request.password,
-            )
-        except ValueError as error:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
-        await runtime.mediamtx.reload()
-        return saved
-
-    @app.delete("/api/cameras/{camera_id}", dependencies=[Depends(authorize)])
-    async def delete_camera(camera_id: str) -> dict:
-        removed = await asyncio.to_thread(runtime.camera_store.delete, camera_id)
-        if not removed:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy camera")
-        await runtime.mediamtx.reload()
-        return {"deleted": True}
-
-    @app.post("/api/discovery/scan", dependencies=[Depends(authorize)])
-    async def scan() -> dict:
-        try:
-            candidates = await runtime.scan()
+            if method == "GET" and path == "/api/status":
+                return 200, {
+                    "status": "ONLINE",
+                    "version": __version__,
+                    "camera_count": len(self.runtime.camera_store.list()),
+                    "candidate_count": len(self.runtime.database.list_candidates()),
+                    "discovery_running": self.runtime.discovery_lock.locked(),
+                    "last_discovery_error": self.runtime.last_discovery_error,
+                    "mediamtx": self.runtime.mediamtx.status(),
+                }
+            if method == "GET" and path == "/api/cameras":
+                return 200, self.runtime.camera_store.list()
+            if method == "GET" and path == "/api/discovery/candidates":
+                return 200, self.runtime.database.list_candidates()
+            if method == "POST" and path == "/api/discovery/scan":
+                candidates = self._await(self.runtime.scan(), 180)
+                return 200, {"count": len(candidates), "candidates": candidates}
+            if method == "POST" and path == "/api/mediamtx/restart":
+                self._await(self.runtime.mediamtx.reload(), 20)
+                return 200, self.runtime.mediamtx.status()
+            if path.startswith("/api/cameras/"):
+                camera_id = unquote(path.removeprefix("/api/cameras/"))
+                if method == "PUT":
+                    request = json.loads(body.decode("utf-8"))
+                    if request.get("id") != camera_id:
+                        return 400, {"detail": "camera_id không khớp nội dung"}
+                    password = request.pop("password", None)
+                    saved = self.runtime.camera_store.upsert(request, password)
+                    self._await(self.runtime.mediamtx.reload(), 20)
+                    return 200, saved
+                if method == "DELETE":
+                    if not self.runtime.camera_store.delete(camera_id):
+                        return 404, {"detail": "Không tìm thấy camera"}
+                    self._await(self.runtime.mediamtx.reload(), 20)
+                    return 200, {"deleted": True}
+            return 404, {"detail": "Không tìm thấy endpoint"}
+        except (ValueError, json.JSONDecodeError) as error:
+            return 400, {"detail": str(error)}
         except RuntimeError as error:
-            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
-        except ValueError as error:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
-        return {"count": len(candidates), "candidates": candidates}
+            return 409, {"detail": str(error)}
+        except FutureTimeoutError:
+            return 504, {"detail": "Gateway xử lý quá thời gian"}
+        except Exception as error:
+            LOGGER.exception("API request thất bại")
+            return 500, {"detail": str(error)}
 
-    @app.get("/api/discovery/candidates", dependencies=[Depends(authorize)])
-    async def list_candidates() -> list[dict]:
-        return runtime.database.list_candidates()
+    def _await(self, operation: Coroutine[Any, Any, Any], timeout: float) -> Any:
+        if self.loop.is_running():
+            return asyncio.run_coroutine_threadsafe(operation, self.loop).result(timeout=timeout)
+        return self.loop.run_until_complete(operation)
 
-    @app.post("/api/mediamtx/restart", dependencies=[Depends(authorize)])
-    async def restart_mediamtx() -> dict:
-        await runtime.mediamtx.reload()
-        return runtime.mediamtx.status()
 
-    return app
+class GatewayHttpServer:
+    def __init__(self, settings: GatewaySettings, router: GatewayRouter):
+        self.router = router
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                self._handle("GET")
+
+            def do_POST(self) -> None:
+                self._handle("POST")
+
+            def do_PUT(self) -> None:
+                self._handle("PUT")
+
+            def do_DELETE(self) -> None:
+                self._handle("DELETE")
+
+            def _handle(self, method: str) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > 65_536:
+                    self._write(413, {"detail": "Nội dung request quá lớn"})
+                    return
+                body = self.rfile.read(length) if length else b""
+                code, payload = outer.router.route(
+                    method, self.path, self.headers.get("Authorization", ""), body
+                )
+                self._write(code, payload)
+
+            def _write(self, code: int, payload: Any) -> None:
+                encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def log_message(self, format: str, *args: Any) -> None:
+                LOGGER.info("HTTP %s", format % args)
+
+        self.server = ThreadingHTTPServer((settings.api_host, settings.api_port), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, name="gateway-http", daemon=True)
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+
+def create_runtime(home: Path | None = None) -> GatewayRuntime:
+    return GatewayRuntime(GatewaySettings.load(home))

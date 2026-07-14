@@ -1,0 +1,9 @@
+{
+  "accounts": [],
+  "policy": {
+    "switch_at_percent": 90,
+    "quota_refresh_hours": 6,
+    "retry_seconds": [60, 300, 900, 3600],
+    "remote_root": "CameraBackup"
+  }
+}

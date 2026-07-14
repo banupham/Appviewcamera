@@ -1,7 +1,7 @@
+import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 from appviewcamera_gateway.config import write_secrets
 
@@ -10,8 +10,8 @@ from appviewcamera_gateway.config import write_secrets
 def gateway_home(tmp_path: Path) -> Path:
     config = tmp_path / "config"
     config.mkdir()
-    (config / "gateway.yaml").write_text(
-        yaml.safe_dump(
+    (config / "gateway.json").write_text(
+        json.dumps(
             {
                 "api": {"host": "127.0.0.1", "port": 18080},
                 "database": {"path": "data/gateway.db"},
@@ -29,10 +29,9 @@ def gateway_home(tmp_path: Path) -> Path:
                     "max_hosts": 16,
                 },
             },
-            sort_keys=False,
         ),
         encoding="utf-8",
     )
-    (config / "cameras.yaml").write_text("cameras: []\n", encoding="utf-8")
+    (config / "cameras.json").write_text('{"cameras": []}\n', encoding="utf-8")
     write_secrets(config / "secrets.env", {"API_TOKEN": "test-token"})
     return tmp_path

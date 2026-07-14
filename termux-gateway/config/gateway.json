@@ -1,0 +1,18 @@
+{
+  "api": {"host": "0.0.0.0", "port": 8080},
+  "database": {"path": "data/gateway.db"},
+  "secrets_file": "config/secrets.env",
+  "mediamtx": {
+    "binary": "bin/mediamtx",
+    "generated_config": "run/mediamtx.yml",
+    "rtsp_port": 8554
+  },
+  "discovery": {
+    "enabled": true,
+    "interval_seconds": 900,
+    "subnets": [],
+    "ports": [554, 80, 443, 8000, 8554],
+    "timeout_seconds": 0.6,
+    "max_hosts": 256
+  }
+}

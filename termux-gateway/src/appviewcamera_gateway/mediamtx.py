@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from urllib.parse import quote
-
-import yaml
 
 from .config import CameraStore, GatewaySettings, read_secrets
 
@@ -54,9 +53,8 @@ def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> di
 def write_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> Path:
     settings.mediamtx_config.parent.mkdir(parents=True, exist_ok=True)
     temporary = settings.mediamtx_config.with_suffix(".tmp")
-    temporary.write_text(
-        yaml.safe_dump(render_mediamtx_config(settings, cameras), sort_keys=False), encoding="utf-8"
-    )
+    # JSON là tập con hợp lệ của YAML 1.2 và MediaMTX đọc được trực tiếp.
+    temporary.write_text(json.dumps(render_mediamtx_config(settings, cameras), indent=2), encoding="utf-8")
     temporary.replace(settings.mediamtx_config)
     return settings.mediamtx_config
 

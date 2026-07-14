@@ -16,7 +16,8 @@ fi
 
 export APPVIEWCAMERA_HOME="$APP_HOME"
 export RCLONE_CONFIG="$APP_HOME/config/rclone.conf"
-nohup "$APP_HOME/.venv/bin/appviewcamera-gateway" >> "$APP_HOME/logs/launcher.log" 2>&1 &
+export PYTHONPATH="$APP_HOME/src"
+nohup python -m appviewcamera_gateway >> "$APP_HOME/logs/launcher.log" 2>&1 &
 PID=$!
 printf '%s\n' "$PID" > "$PID_FILE"
 sleep 1

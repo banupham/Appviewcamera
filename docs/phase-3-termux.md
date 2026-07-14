@@ -11,7 +11,7 @@ Viewer vẫn là Android native.
 
 - Cấu hình tách riêng cho Gateway, camera, recording và Google Drive.
 - Password camera tách sang `secrets.env`, API không trả password.
-- REST API Bearer token.
+- REST API Bearer token dùng HTTP server trong thư viện chuẩn Python, không phụ thuộc FastAPI/Pydantic.
 - ONVIF WS-Discovery, fallback quét TCP subnet có giới hạn.
 - SQLite index kết quả discovery.
 - Sinh `mediamtx.yml` từ camera đang bật.

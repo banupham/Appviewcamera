@@ -24,7 +24,7 @@ Gateway APK cũ đang được giữ làm bản đối chiếu cho đến khi Te
 Mã nguồn nằm tại `termux-gateway/` và hiện cung cấp:
 
 - API FastAPI có Bearer token.
-- Camera CRUD; mật khẩu tách khỏi `cameras.yaml`.
+- Camera CRUD; mật khẩu tách khỏi `cameras.json`.
 - ONVIF WS-Discovery và quét các cổng LAN có giới hạn.
 - SQLite lưu camera tìm thấy, không quét lại toàn mạng để đọc danh sách.
 - Tự sinh cấu hình MediaMTX và relay RTSP không transcoding.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import tempfile
 import threading
@@ -8,26 +9,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-
 CAMERA_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
-def _read_yaml(path: Path, default: Any) -> Any:
+def _read_json(path: Path, default: Any) -> Any:
     if not path.exists():
         return default
     with path.open("r", encoding="utf-8") as handle:
-        value = yaml.safe_load(handle)
+        value = json.load(handle)
     return default if value is None else value
 
 
-def _atomic_yaml(path: Path, value: Any) -> None:
+def _atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            yaml.safe_dump(value, handle, allow_unicode=True, sort_keys=False)
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
@@ -86,7 +85,7 @@ class GatewaySettings:
     @classmethod
     def load(cls, home: Path | None = None) -> "GatewaySettings":
         root = Path(home or os.environ.get("APPVIEWCAMERA_HOME", "~/appviewcamera")).expanduser().resolve()
-        raw = _read_yaml(root / "config" / "gateway.yaml", {})
+        raw = _read_json(root / "config" / "gateway.json", {})
         api = raw.get("api", {})
         database = raw.get("database", {})
         mediamtx = raw.get("mediamtx", {})
@@ -116,12 +115,12 @@ class GatewaySettings:
 class CameraStore:
     def __init__(self, settings: GatewaySettings):
         self.settings = settings
-        self.path = settings.home / "config" / "cameras.yaml"
+        self.path = settings.home / "config" / "cameras.json"
         self._lock = threading.RLock()
 
     def list(self) -> list[dict[str, Any]]:
         with self._lock:
-            raw = _read_yaml(self.path, {"cameras": []})
+            raw = _read_json(self.path, {"cameras": []})
             cameras = raw.get("cameras", []) if isinstance(raw, dict) else []
             return [dict(camera) for camera in cameras if isinstance(camera, dict)]
 
@@ -152,7 +151,7 @@ class CameraStore:
             cameras = self.list()
             cameras = [item for item in cameras if item.get("id") != camera_id]
             cameras.append(normalized)
-            _atomic_yaml(self.path, {"cameras": cameras})
+            _atomic_json(self.path, {"cameras": cameras})
             if password is not None:
                 secrets = read_secrets(self.settings.secrets_path)
                 secrets[normalized["secret_ref"]] = password
@@ -165,7 +164,7 @@ class CameraStore:
             removed = next((item for item in cameras if item.get("id") == camera_id), None)
             if removed is None:
                 return False
-            _atomic_yaml(self.path, {"cameras": [item for item in cameras if item.get("id") != camera_id]})
+            _atomic_json(self.path, {"cameras": [item for item in cameras if item.get("id") != camera_id]})
             secret_ref = removed.get("secret_ref")
             if secret_ref:
                 secrets = read_secrets(self.settings.secrets_path)

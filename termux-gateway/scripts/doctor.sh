@@ -28,7 +28,7 @@ else
   echo "FAIL secrets.env"
   FAILED=1
 fi
-APPVIEWCAMERA_HOME="$APP_HOME" "$APP_HOME/.venv/bin/python" -c 'from appviewcamera_gateway.config import GatewaySettings; GatewaySettings.load(); print("OK   gateway.yaml")'
+APPVIEWCAMERA_HOME="$APP_HOME" PYTHONPATH="$APP_HOME/src" python -c 'from appviewcamera_gateway.config import GatewaySettings; GatewaySettings.load(); print("OK   gateway.json")'
 RCLONE_CONFIG="$APP_HOME/config/rclone.conf" rclone listremotes >/dev/null
 echo "OK   rclone.conf"
 exit "$FAILED"

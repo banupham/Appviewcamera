@@ -21,7 +21,8 @@ termux-gateway/scripts/install.sh
 ```
 
 Installer cài Python, FFmpeg, rclone, tải MediaMTX ARM phù hợp, kiểm tra SHA-256, tạo API token
-và tạo `~/.termux/boot/20-appviewcamera-gateway`.
+và tạo `~/.termux/boot/20-appviewcamera-gateway`. Gateway chỉ dùng thư viện chuẩn Python trên
+điện thoại, không chạy `pip install` và không cần Rust/maturin.
 
 Xem trạng thái:
 
@@ -39,18 +40,19 @@ Dừng dịch vụ:
 
 Các file người dùng được giữ khi chạy lại installer:
 
-- `config/gateway.yaml`: API, SQLite, MediaMTX và phạm vi quét LAN.
-- `config/cameras.yaml`: camera, relay path; không chứa password.
-- `config/recording.yaml`: ghi hình và retention.
-- `config/google-drives.yaml`: danh sách remote và chính sách; không chứa OAuth token.
+- `config/gateway.json`: API, SQLite, MediaMTX và phạm vi quét LAN.
+- `config/cameras.json`: camera, relay path; không chứa password.
+- `config/recording.json`: ghi hình và retention.
+- `config/google-drives.json`: danh sách remote và chính sách; không chứa OAuth token.
 - `config/secrets.env`: API token và password camera, quyền file `600`.
 - `config/rclone.conf`: do rclone tạo ở giai đoạn Google Drive, không trả về Viewer.
 
 Mặc định Gateway tự xác định subnet `/24`. Nếu thiết bị chọn sai card mạng, đặt rõ:
 
-```yaml
-discovery:
-  subnets: [192.168.1.0/24]
+```json
+"discovery": {
+  "subnets": ["192.168.1.0/24"]
+}
 ```
 
 Không đặt subnet quá rộng. `max_hosts` mặc định chặn quét quá 256 địa chỉ.

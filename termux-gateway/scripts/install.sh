@@ -13,36 +13,35 @@ fi
 echo "[1/6] Cài gói Termux"
 pkg install -y python curl tar ffmpeg rclone
 
-echo "[2/6] Tạo thư mục $APP_HOME"
+echo "[2/5] Tạo thư mục $APP_HOME"
 mkdir -p "$APP_HOME"/{bin,config,data,logs,recordings,run,scripts,src}
+if [ -f "$APP_HOME/.venv/pyvenv.cfg" ]; then
+  echo "Xóa virtual environment cũ không còn được sử dụng"
+  rm -rf -- "$APP_HOME/.venv"
+fi
 if [ "$SOURCE_DIR" != "$APP_HOME" ]; then
   cp "$SOURCE_DIR/pyproject.toml" "$APP_HOME/pyproject.toml"
   cp -R "$SOURCE_DIR/src/." "$APP_HOME/src/"
   cp -R "$SOURCE_DIR/scripts/." "$APP_HOME/scripts/"
   cp "$SOURCE_DIR/README.md" "$APP_HOME/README.md"
-  for config in gateway.yaml cameras.yaml recording.yaml google-drives.yaml; do
+  for config in gateway.json cameras.json recording.json google-drives.json; do
     if [ ! -f "$APP_HOME/config/$config" ]; then
       cp "$SOURCE_DIR/config/$config" "$APP_HOME/config/$config"
     fi
   done
 fi
 
-echo "[3/6] Tạo Python virtual environment"
-python -m venv "$APP_HOME/.venv"
-"$APP_HOME/.venv/bin/python" -m pip install --upgrade pip
-"$APP_HOME/.venv/bin/pip" install "$APP_HOME"
-
-echo "[4/6] Tạo API token"
+echo "[3/5] Tạo API token"
 SECRETS_FILE="$APP_HOME/config/secrets.env"
 if [ ! -s "$SECRETS_FILE" ]; then
-  TOKEN="$("$APP_HOME/.venv/bin/python" -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
   printf 'API_TOKEN=%s\n' "$TOKEN" > "$SECRETS_FILE"
 fi
 chmod 600 "$SECRETS_FILE"
 touch "$APP_HOME/config/rclone.conf"
 chmod 600 "$APP_HOME/config/rclone.conf"
 
-echo "[5/6] Tải MediaMTX $MEDIAMTX_VERSION"
+echo "[4/5] Tải MediaMTX $MEDIAMTX_VERSION"
 case "$(uname -m)" in
   aarch64|arm64) ARCHIVE_ARCH="arm64v8" ;;
   armv7l|armv8l) ARCHIVE_ARCH="armv7" ;;
@@ -61,7 +60,7 @@ EXPECTED="$(grep "  $ARCHIVE\$" "$TEMP_DIR/checksums.sha256")"
 tar -xzf "$TEMP_DIR/$ARCHIVE" -C "$TEMP_DIR"
 install -m 700 "$TEMP_DIR/mediamtx" "$APP_HOME/bin/mediamtx"
 
-echo "[6/6] Cấu hình tự chạy sau reboot"
+echo "[5/5] Cấu hình tự chạy sau reboot"
 mkdir -p "$HOME/.termux/boot"
 BOOT_SCRIPT="$HOME/.termux/boot/20-appviewcamera-gateway"
 printf '%s\n' '#!/data/data/com.termux/files/usr/bin/bash' > "$BOOT_SCRIPT"
