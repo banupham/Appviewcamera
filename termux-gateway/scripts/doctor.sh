@@ -16,8 +16,18 @@ check_command python
 check_command ffprobe
 check_command rclone
 check_command curl
-[ -x "$APP_HOME/bin/mediamtx" ] && echo "OK   mediamtx" || { echo "FAIL mediamtx"; FAILED=1; }
-[ -s "$APP_HOME/config/secrets.env" ] && echo "OK   secrets.env" || { echo "FAIL secrets.env"; FAILED=1; }
+if [ -x "$APP_HOME/bin/mediamtx" ]; then
+  echo "OK   mediamtx"
+else
+  echo "FAIL mediamtx"
+  FAILED=1
+fi
+if [ -s "$APP_HOME/config/secrets.env" ]; then
+  echo "OK   secrets.env"
+else
+  echo "FAIL secrets.env"
+  FAILED=1
+fi
 APPVIEWCAMERA_HOME="$APP_HOME" "$APP_HOME/.venv/bin/python" -c 'from appviewcamera_gateway.config import GatewaySettings; GatewaySettings.load(); print("OK   gateway.yaml")'
 RCLONE_CONFIG="$APP_HOME/config/rclone.conf" rclone listremotes >/dev/null
 echo "OK   rclone.conf"
