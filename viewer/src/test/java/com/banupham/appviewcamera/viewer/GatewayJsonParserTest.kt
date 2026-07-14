@@ -22,4 +22,13 @@ class GatewayJsonParserTest {
         )
         assertEquals(listOf(554, 8000), candidates.map { it.port })
     }
+
+    @Test
+    fun parsesDriveQuotaWithoutCredentials() {
+        val drives = GatewayJsonParser.drives(
+            """[{"id":"drive01","display_name":"Camera backup","active":true,"configured":true,"status":"ONLINE","last_error":null,"quota":{"total":1000,"used":400,"free":600}}]"""
+        )
+        assertEquals("ONLINE", drives.single().status)
+        assertEquals(600L, drives.single().quota?.free)
+    }
 }

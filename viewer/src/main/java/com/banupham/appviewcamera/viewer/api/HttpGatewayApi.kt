@@ -45,6 +45,27 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         request("DELETE", "/api/cameras/${encode(cameraId)}")
     }
 
+    override suspend fun drives(): List<GoogleDriveAccount> =
+        GatewayJsonParser.drives(request("GET", "/api/storage/drives"))
+
+    override suspend fun addDrive(drive: GoogleDriveMutation): GoogleDriveAccount {
+        val body = JSONObject().apply {
+            put("id", drive.id)
+            put("display_name", drive.displayName)
+            put("oauth_token", drive.oauthToken)
+        }.toString()
+        return GatewayJsonParser.drives("[${request("POST", "/api/storage/drives", body)}]").single()
+    }
+
+    override suspend fun refreshDrive(driveId: String): GoogleDriveAccount =
+        GatewayJsonParser.drives(
+            "[${request("POST", "/api/storage/drives/${encode(driveId)}/refresh", readTimeoutMs = STORAGE_TIMEOUT_MS)}]"
+        ).single()
+
+    override suspend fun deleteDrive(driveId: String) {
+        request("DELETE", "/api/storage/drives/${encode(driveId)}")
+    }
+
     private suspend fun request(
         method: String,
         path: String,
@@ -82,6 +103,7 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         const val CONNECT_TIMEOUT_MS = 5_000
         const val READ_TIMEOUT_MS = 8_000
         const val DISCOVERY_TIMEOUT_MS = 180_000
+        const val STORAGE_TIMEOUT_MS = 60_000
         const val MAX_ERROR_LENGTH = 300
 
         fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())

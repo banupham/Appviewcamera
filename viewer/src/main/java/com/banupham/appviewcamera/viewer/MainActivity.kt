@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.CameraSummary
+import com.banupham.appviewcamera.viewer.api.GoogleDriveMutation
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
 
 class MainActivity : ComponentActivity() {
@@ -92,11 +93,117 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
                     onSave = viewModel::saveCamera,
                     onDelete = viewModel::deleteCamera
                 )
-                ViewerSection.STORAGE -> Placeholder("Google Drive sẽ được cấu hình tại đây qua Gateway; token không lưu trong Viewer.")
+                ViewerSection.STORAGE -> StorageScreen(
+                    state = state,
+                    onAdd = viewModel::addDrive,
+                    onRefresh = viewModel::refreshDrive,
+                    onDelete = viewModel::deleteDrive
+                )
                 ViewerSection.SETTINGS -> SettingsScreen(state, viewModel::saveConfig, viewModel::refresh)
             }
         }
     }
+}
+
+@Composable
+private fun StorageScreen(
+    state: ViewerUiState,
+    onAdd: (GoogleDriveMutation) -> Unit,
+    onRefresh: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Text(
+                "OAuth token được gửi một lần tới Gateway, lưu trong rclone.conf và không lưu trên Viewer.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        item { Button(onClick = { showAddDialog = true }) { Text("Thêm Google Drive") } }
+        if (state.drives.isEmpty()) {
+            item { Text("Chưa có tài khoản Google Drive.") }
+        }
+        items(state.drives, key = { it.id }) { drive ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(drive.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text("Remote: ${drive.id} • ${drive.status}${if (drive.active) " • đang dùng" else ""}")
+                    drive.quota?.let { quota ->
+                        Text("Đã dùng ${formatBytes(quota.used)} / ${formatBytes(quota.total)} • còn ${formatBytes(quota.free)}")
+                    }
+                    drive.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onRefresh(drive.id) }) { Text("Kiểm tra") }
+                        TextButton(onClick = { onDelete(drive.id) }) { Text("Xóa") }
+                    }
+                }
+            }
+        }
+    }
+    if (showAddDialog) {
+        AddDriveDialog(
+            onDismiss = { showAddDialog = false },
+            onSave = {
+                onAdd(it)
+                showAddDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddDriveDialog(onDismiss: () -> Unit, onSave: (GoogleDriveMutation) -> Unit) {
+    var id by remember { mutableStateOf("drive01") }
+    var displayName by remember { mutableStateOf("Google Drive 01") }
+    var oauthToken by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Thêm Google Drive") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Dán JSON token được tạo bởi rclone authorize. Token chỉ được chuyển tới Gateway sau khi bấm Lưu.")
+                OutlinedTextField(
+                    id,
+                    { id = it.lowercase().filter { char -> char.isLetterOrDigit() || char == '_' || char == '-' } },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Mã remote") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    displayName,
+                    { displayName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Tên hiển thị") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    oauthToken,
+                    { oauthToken = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("OAuth token JSON") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    minLines = 3
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = id.isNotBlank() && oauthToken.isNotBlank(),
+                onClick = { onSave(GoogleDriveMutation(id.trim(), displayName.trim(), oauthToken.trim())) }
+            ) { Text("Lưu") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+    )
+}
+
+private fun formatBytes(value: Long?): String {
+    if (value == null) return "—"
+    val gib = value.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    return if (gib >= 1.0) String.format("%.1f GB", gib) else String.format("%.1f MB", value / (1024.0 * 1024.0))
 }
 
 @Composable

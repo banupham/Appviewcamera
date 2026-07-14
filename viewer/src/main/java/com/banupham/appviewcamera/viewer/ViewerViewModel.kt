@@ -8,6 +8,8 @@ import com.banupham.appviewcamera.viewer.api.GatewayStatus
 import com.banupham.appviewcamera.viewer.api.DiscoveryCandidate
 import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.HttpGatewayApi
+import com.banupham.appviewcamera.viewer.api.GoogleDriveAccount
+import com.banupham.appviewcamera.viewer.api.GoogleDriveMutation
 import com.banupham.appviewcamera.viewer.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.settings.GatewayConfigStore
@@ -24,6 +26,7 @@ data class ViewerUiState(
     val gatewayStatus: GatewayStatus? = null,
     val cameras: List<CameraSummary> = emptyList(),
     val candidates: List<DiscoveryCandidate> = emptyList(),
+    val drives: List<GoogleDriveAccount> = emptyList(),
     val selectedCameraId: String? = null,
     val loading: Boolean = false,
     val message: String? = null
@@ -74,14 +77,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val api = HttpGatewayApi(config)
                 val status = async { api.status() }
                 val cameras = async { api.cameras() }
-                status.await() to cameras.await()
-            }.onSuccess { (gatewayStatus, cameras) ->
+                val drives = async { api.drives() }
+                Triple(status.await(), cameras.await(), drives.await())
+            }.onSuccess { (gatewayStatus, cameras, drives) ->
                 _state.update { current ->
                     val selected = current.selectedCameraId?.takeIf { id -> cameras.any { it.id == id } }
                         ?: cameras.firstOrNull { it.enabled }?.id
                     current.copy(
                         gatewayStatus = gatewayStatus,
                         cameras = cameras,
+                        drives = drives,
                         selectedCameraId = selected,
                         loading = false,
                         message = null
@@ -124,6 +129,25 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 message = "Đã xóa camera"
             )
         }
+    }
+
+    fun addDrive(drive: GoogleDriveMutation) = launchApiAction("Đang lưu tài khoản Drive…") { api ->
+        api.addDrive(drive)
+        val drives = api.drives()
+        _state.update { it.copy(drives = drives, loading = false, message = "Đã lưu ${drive.displayName}") }
+    }
+
+    fun refreshDrive(driveId: String) = launchApiAction("Đang kiểm tra Google Drive…") { api ->
+        api.refreshDrive(driveId)
+        val drives = api.drives()
+        val account = drives.firstOrNull { it.id == driveId }
+        val message = if (account?.status == "ONLINE") "Google Drive hoạt động" else account?.lastError ?: "Không kết nối được Drive"
+        _state.update { it.copy(drives = drives, loading = false, message = message) }
+    }
+
+    fun deleteDrive(driveId: String) = launchApiAction("Đang xóa tài khoản Drive…") { api ->
+        api.deleteDrive(driveId)
+        _state.update { it.copy(drives = api.drives(), loading = false, message = "Đã xóa tài khoản Drive") }
     }
 
     private fun launchApiAction(progress: String, block: suspend (HttpGatewayApi) -> Unit) {

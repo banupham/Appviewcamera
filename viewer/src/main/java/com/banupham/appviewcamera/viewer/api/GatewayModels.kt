@@ -41,3 +41,25 @@ data class GatewayStatus(
     val mediaMtxState: String,
     val cameraCount: Int
 )
+
+data class DriveQuota(
+    val total: Long?,
+    val used: Long?,
+    val free: Long?
+)
+
+data class GoogleDriveAccount(
+    val id: String,
+    val displayName: String,
+    val active: Boolean,
+    val configured: Boolean,
+    val status: String,
+    val lastError: String?,
+    val quota: DriveQuota?
+)
+
+data class GoogleDriveMutation(
+    val id: String,
+    val displayName: String,
+    val oauthToken: String
+)

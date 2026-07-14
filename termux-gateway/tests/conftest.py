@@ -33,5 +33,7 @@ def gateway_home(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (config / "cameras.json").write_text('{"cameras": []}\n', encoding="utf-8")
+    (config / "google-drives.json").write_text('{"accounts": [], "policy": {}}\n', encoding="utf-8")
+    (config / "rclone.conf").write_text("", encoding="utf-8")
     write_secrets(config / "secrets.env", {"API_TOKEN": "test-token"})
     return tmp_path

@@ -54,4 +54,34 @@ object GatewayJsonParser {
             cameraCount = root.optInt("camera_count", 0)
         )
     }
+
+    fun drives(payload: String): List<GoogleDriveAccount> {
+        val array = JSONArray(payload)
+        return buildList {
+            repeat(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                val quota = item.optJSONObject("quota")?.let {
+                    DriveQuota(
+                        total = it.optionalLong("total"),
+                        used = it.optionalLong("used"),
+                        free = it.optionalLong("free")
+                    )
+                }
+                add(
+                    GoogleDriveAccount(
+                        id = item.getString("id"),
+                        displayName = item.optString("display_name").ifBlank { item.getString("id") },
+                        active = item.optBoolean("active", false),
+                        configured = item.optBoolean("configured", false),
+                        status = item.optString("status", "NOT_CHECKED"),
+                        lastError = item.optString("last_error").takeIf { value -> value.isNotBlank() && value != "null" },
+                        quota = quota
+                    )
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.optionalLong(name: String): Long? =
+        if (has(name) && !isNull(name)) getLong(name) else null
 }

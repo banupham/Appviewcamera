@@ -7,4 +7,8 @@ interface GatewayApi {
     suspend fun discoveryCandidates(): List<DiscoveryCandidate>
     suspend fun saveCamera(camera: CameraMutation): CameraSummary
     suspend fun deleteCamera(cameraId: String)
+    suspend fun drives(): List<GoogleDriveAccount>
+    suspend fun addDrive(drive: GoogleDriveMutation): GoogleDriveAccount
+    suspend fun refreshDrive(driveId: String): GoogleDriveAccount
+    suspend fun deleteDrive(driveId: String)
 }

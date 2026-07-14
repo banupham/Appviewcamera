@@ -16,6 +16,7 @@ from .config import CameraStore, GatewaySettings
 from .database import GatewayDatabase
 from .discovery import discover_cameras
 from .mediamtx import MediaMtxSupervisor
+from .storage import GoogleDriveStore
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
@@ -27,6 +28,7 @@ class GatewayRuntime:
         self.camera_store = CameraStore(settings)
         self.database = GatewayDatabase(settings.database_path)
         self.mediamtx = MediaMtxSupervisor(settings, self.camera_store)
+        self.drive_store = GoogleDriveStore(settings.home)
         self.discovery_lock = asyncio.Lock()
         self.discovery_task: asyncio.Task | None = None
         self.last_discovery_error: str | None = None
@@ -94,6 +96,15 @@ class GatewayRouter:
                 }
             if method == "GET" and path == "/api/cameras":
                 return 200, self.runtime.camera_store.list()
+            if method == "GET" and path == "/api/storage/drives":
+                return 200, self.runtime.drive_store.list()
+            if method == "POST" and path == "/api/storage/drives":
+                request = json.loads(body.decode("utf-8"))
+                return 201, self.runtime.drive_store.add(
+                    str(request.get("id", "")),
+                    str(request.get("display_name", "")),
+                    str(request.get("oauth_token", "")),
+                )
             if method == "GET" and path == "/api/discovery/candidates":
                 return 200, self.runtime.database.list_candidates()
             if method == "POST" and path == "/api/discovery/scan":
@@ -116,6 +127,16 @@ class GatewayRouter:
                     if not self.runtime.camera_store.delete(camera_id):
                         return 404, {"detail": "Không tìm thấy camera"}
                     self._await(self.runtime.mediamtx.reload(), 20)
+                    return 200, {"deleted": True}
+            if path.startswith("/api/storage/drives/"):
+                suffix = path.removeprefix("/api/storage/drives/")
+                if suffix.endswith("/refresh") and method == "POST":
+                    remote_id = unquote(suffix.removesuffix("/refresh"))
+                    return 200, self.runtime.drive_store.refresh(remote_id)
+                remote_id = unquote(suffix)
+                if method == "DELETE":
+                    if not self.runtime.drive_store.delete(remote_id):
+                        return 404, {"detail": "Không tìm thấy tài khoản Google Drive"}
                     return 200, {"deleted": True}
             return 404, {"detail": "Không tìm thấy endpoint"}
         except (ValueError, json.JSONDecodeError) as error:

@@ -44,3 +44,20 @@ def test_camera_crud_never_returns_password(gateway_home):
         assert router.route("DELETE", "/api/cameras/camera01", headers)[1] == {"deleted": True}
     finally:
         loop.close()
+
+
+def test_drive_api_never_returns_oauth_token(gateway_home):
+    router, loop = make_router(gateway_home)
+    headers = "Bearer test-token"
+    oauth_token = json.dumps({"access_token": "secret-access", "token_type": "Bearer"})
+    body = json.dumps({"id": "drive01", "display_name": "Drive 01", "oauth_token": oauth_token}).encode()
+    try:
+        code, created = router.route("POST", "/api/storage/drives", headers, body)
+        assert code == 201
+        assert "secret-access" not in str(created)
+        code, listed = router.route("GET", "/api/storage/drives", headers)
+        assert code == 200
+        assert "secret-access" not in str(listed)
+        assert router.route("DELETE", "/api/storage/drives/drive01", headers)[1] == {"deleted": True}
+    finally:
+        loop.close()
