@@ -28,7 +28,7 @@ jobs:
       # Debug APKs are device-test artifacts. Keeping this key stable allows the
       # next GitHub build to be installed over the previous test build.
       - name: Restore stable debug signing key
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.android/debug.keystore
           key: appviewcamera-android-debug-keystore-v1
