@@ -11,4 +11,7 @@ interface GatewayApi {
     suspend fun addDrive(drive: GoogleDriveMutation): GoogleDriveAccount
     suspend fun refreshDrive(driveId: String): GoogleDriveAccount
     suspend fun deleteDrive(driveId: String)
+    suspend fun recordingStatus(): RecordingStatus
+    suspend fun updateRecording(enabled: Boolean, localRetentionMinutes: Int): RecordingStatus
+    suspend fun recordings(cameraId: String? = null): List<RecordingClip>
 }

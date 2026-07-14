@@ -17,6 +17,7 @@ Camera IP --RTSP/LAN--> Termux Gateway --RTSP/API/Tailscale--> Viewer APK
 - Giai đoạn 3: Termux Gateway, tự quét LAN và relay MediaMTX — hoàn thành trên thiết bị ARM64.
 - Giai đoạn 4: Viewer quản trị camera và xem RTSP relay qua LAN — đang thực hiện.
 - Giai đoạn lưu trữ: Viewer thêm/xóa/kiểm tra Google Drive qua Gateway — đang thực hiện.
+- Giai đoạn ghi/xem lại: fMP4 segment, SQLite clip index và phát lại trong Viewer — đang thực hiện.
 
 Gateway APK cũ đang được giữ làm bản đối chiếu cho đến khi Termux Gateway được kiểm thử trên
 điện thoại thật. Viewer APK tiếp tục được phát triển và build trên GitHub.
@@ -31,6 +32,7 @@ Mã nguồn nằm tại `termux-gateway/` và hiện cung cấp:
 - SQLite lưu camera tìm thấy, không quét lại toàn mạng để đọc danh sách.
 - Tự sinh cấu hình MediaMTX và relay RTSP không transcoding.
 - Quản lý remote Google Drive, kiểm tra quota bằng rclone và không trả OAuth token về Viewer.
+- Ghi segment fMP4 không transcoding, lập chỉ mục SQLite và phục vụ playback có Bearer token/HTTP Range.
 - Giám sát MediaMTX, retry 5, 10, 30 rồi 60 giây.
 - Script cài đặt, start/stop/status/doctor và Termux:Boot.
 - Cấu hình ghi hình và nhiều Google Drive đã tách file; worker ghi/upload được triển khai ở các giai đoạn sau.
@@ -54,5 +56,6 @@ GitHub Actions.
 - [Giai đoạn 3](docs/phase-3-termux.md)
 - [Giai đoạn 4](docs/phase-4-viewer-live.md)
 - [Lưu trữ Google Drive](docs/phase-9-google-drive.md)
+- [Ghi hình và xem lại](docs/phase-6-14-recording-playback.md)
 - [Database schema](docs/database-schema.md)
 - [Roadmap](docs/roadmap.md)

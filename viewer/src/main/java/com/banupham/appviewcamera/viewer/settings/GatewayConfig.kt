@@ -25,4 +25,6 @@ data class GatewayConfig(
         require(relayPath.isNotBlank()) { "Relay path không hợp lệ" }
         return "rtsp://$host:$rtspPort/${relayPath.trim('/')}"
     }
+
+    fun recordingUrl(clipId: String): String = "$apiBaseUrl/api/recordings/$clipId/content"
 }

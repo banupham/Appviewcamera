@@ -4,12 +4,14 @@ import asyncio
 import hmac
 import json
 import logging
+import re
 import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Coroutine
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
 from .config import CameraStore, GatewaySettings
@@ -17,9 +19,16 @@ from .database import GatewayDatabase
 from .discovery import discover_cameras
 from .mediamtx import MediaMtxSupervisor
 from .storage import GoogleDriveStore
+from .recording import RecordingManager
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
+
+
+@dataclass(frozen=True)
+class FilePayload:
+    path: Path
+    content_type: str = "video/mp4"
 
 
 class GatewayRuntime:
@@ -29,6 +38,7 @@ class GatewayRuntime:
         self.database = GatewayDatabase(settings.database_path)
         self.mediamtx = MediaMtxSupervisor(settings, self.camera_store)
         self.drive_store = GoogleDriveStore(settings.home)
+        self.recording = RecordingManager(settings, self.database)
         self.discovery_lock = asyncio.Lock()
         self.discovery_task: asyncio.Task | None = None
         self.last_discovery_error: str | None = None
@@ -74,7 +84,9 @@ class GatewayRouter:
         self.loop = loop
 
     def route(self, method: str, raw_path: str, authorization: str, body: bytes = b"") -> tuple[int, Any]:
-        path = urlsplit(raw_path).path
+        parsed_url = urlsplit(raw_path)
+        path = parsed_url.path
+        query = parse_qs(parsed_url.query)
         if method == "GET" and path == "/health":
             return 200, {"status": "ok", "version": __version__}
         expected = self.runtime.settings.api_token
@@ -105,6 +117,30 @@ class GatewayRouter:
                     str(request.get("display_name", "")),
                     str(request.get("oauth_token", "")),
                 )
+            if method == "GET" and path == "/api/recording":
+                return 200, self.runtime.recording.status()
+            if method == "PUT" and path == "/api/recording":
+                request = json.loads(body.decode("utf-8"))
+                result = self.runtime.recording.update(
+                    bool(request.get("enabled", False)),
+                    int(request["local_retention_minutes"]) if "local_retention_minutes" in request else None,
+                )
+                self._await(self.runtime.mediamtx.reload(), 20)
+                return 200, result
+            if method == "GET" and path == "/api/recordings":
+                self.runtime.recording.scan(self.runtime.camera_store.list())
+                camera_id = query.get("camera_id", [None])[0]
+                from_ms = int(query["from_ms"][0]) if "from_ms" in query else None
+                to_ms = int(query["to_ms"][0]) if "to_ms" in query else None
+                limit = int(query.get("limit", ["200"])[0])
+                clips = self.runtime.database.list_clips(camera_id, from_ms, to_ms, limit)
+                return 200, {"count": len(clips), "clips": clips}
+            if path.startswith("/api/recordings/") and path.endswith("/content") and method in ("GET", "HEAD"):
+                clip_id = unquote(path.removeprefix("/api/recordings/").removesuffix("/content"))
+                clip_path = self.runtime.recording.clip_path(clip_id)
+                if clip_path is None:
+                    return 404, {"detail": "Không tìm thấy clip"}
+                return 200, FilePayload(clip_path)
             if method == "GET" and path == "/api/discovery/candidates":
                 return 200, self.runtime.database.list_candidates()
             if method == "POST" and path == "/api/discovery/scan":
@@ -164,6 +200,9 @@ class GatewayHttpServer:
             def do_GET(self) -> None:
                 self._handle("GET")
 
+            def do_HEAD(self) -> None:
+                self._handle("HEAD")
+
             def do_POST(self) -> None:
                 self._handle("POST")
 
@@ -185,12 +224,60 @@ class GatewayHttpServer:
                 self._write(code, payload)
 
             def _write(self, code: int, payload: Any) -> None:
+                if isinstance(payload, FilePayload):
+                    self._write_file(code, payload)
+                    return
                 encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(encoded)))
                 self.end_headers()
                 self.wfile.write(encoded)
+
+            def _write_file(self, code: int, payload: FilePayload) -> None:
+                try:
+                    size = payload.path.stat().st_size
+                    start, end = 0, max(0, size - 1)
+                    range_header = self.headers.get("Range", "")
+                    if range_header:
+                        match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+                        if not match or (not match.group(1) and not match.group(2)):
+                            self.send_error(416)
+                            return
+                        if match.group(1):
+                            start = int(match.group(1))
+                            end = int(match.group(2)) if match.group(2) else end
+                        else:
+                            suffix = int(match.group(2))
+                            start = max(0, size - suffix)
+                        if start >= size or end < start:
+                            self.send_response(416)
+                            self.send_header("Content-Range", f"bytes */{size}")
+                            self.end_headers()
+                            return
+                        end = min(end, size - 1)
+                        code = 206
+                    length = max(0, end - start + 1)
+                    self.send_response(code)
+                    self.send_header("Content-Type", payload.content_type)
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Content-Length", str(length))
+                    if code == 206:
+                        self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+                    self.end_headers()
+                    if self.command == "HEAD":
+                        return
+                    with payload.path.open("rb") as handle:
+                        handle.seek(start)
+                        remaining = length
+                        while remaining > 0:
+                            chunk = handle.read(min(64 * 1024, remaining))
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            remaining -= len(chunk)
+                except OSError:
+                    LOGGER.exception("Không đọc được clip %s", payload.path)
 
             def log_message(self, format: str, *args: Any) -> None:
                 LOGGER.info("HTTP %s", format % args)

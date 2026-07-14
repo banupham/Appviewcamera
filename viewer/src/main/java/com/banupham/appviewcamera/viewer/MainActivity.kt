@@ -28,6 +28,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,10 @@ import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.CameraSummary
 import com.banupham.appviewcamera.viewer.api.GoogleDriveMutation
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
+import com.banupham.appviewcamera.viewer.player.PlaybackPlayer
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +90,13 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
             if (state.loading) CircularProgressIndicator()
             when (selectedSection) {
                 ViewerSection.LIVE -> LiveScreen(state, viewModel::selectCamera)
-                ViewerSection.PLAYBACK -> Placeholder("Playback sẽ dùng SQLite index của Gateway, không quét Google Drive.")
+                ViewerSection.PLAYBACK -> PlaybackScreen(
+                    state = state,
+                    onSelectCamera = viewModel::selectCamera,
+                    onRefresh = viewModel::loadRecordings,
+                    onToggleRecording = viewModel::setRecordingEnabled,
+                    onSelectClip = viewModel::selectRecording
+                )
                 ViewerSection.DEVICES -> DevicesScreen(
                     state = state,
                     onRefresh = viewModel::refresh,
@@ -103,6 +114,87 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
             }
         }
     }
+}
+
+@Composable
+private fun PlaybackScreen(
+    state: ViewerUiState,
+    onSelectCamera: (String) -> Unit,
+    onRefresh: (String?) -> Unit,
+    onToggleRecording: (Boolean, Int) -> Unit,
+    onSelectClip: (String) -> Unit
+) {
+    val cameraId = state.selectedCameraId
+    LaunchedEffect(cameraId) {
+        if (state.config.validate().isSuccess) onRefresh(cameraId)
+    }
+    val selectedClip = state.recordings.firstOrNull { it.id == state.selectedRecordingId }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            val recording = state.recordingStatus
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        if (recording?.enabled == true) "Ghi hình đang bật" else "Ghi hình đang tắt",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    recording?.let {
+                        Text("Giữ clip cục bộ ${it.localRetentionMinutes} phút • còn ${formatBytes(it.diskFreeBytes)}")
+                    }
+                    Button(
+                        onClick = { onToggleRecording(recording?.enabled != true, recording?.localRetentionMinutes ?: 60) }
+                    ) { Text(if (recording?.enabled == true) "Tắt ghi hình" else "Bật ghi hình") }
+                    Text("Clip đầu tiên xuất hiện sau khi segment 60 giây hoàn tất.")
+                }
+            }
+        }
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.cameras, key = { it.id }) { camera ->
+                    FilterChip(
+                        selected = camera.id == cameraId,
+                        onClick = { onSelectCamera(camera.id) },
+                        label = { Text(camera.name) }
+                    )
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { onRefresh(cameraId) }) { Text("Làm mới clip") }
+                Text("${state.recordings.size} clip")
+            }
+        }
+        selectedClip?.let { clip ->
+            item {
+                PlaybackPlayer(
+                    url = state.config.recordingUrl(clip.id),
+                    apiToken = state.config.apiToken
+                )
+            }
+        }
+        if (state.recordings.isEmpty()) {
+            item { Text("Chưa có clip hoàn tất cho camera này.") }
+        }
+        items(state.recordings, key = { it.id }) { clip ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(formatRecordingTime(clip.startedAtMs), style = MaterialTheme.typography.titleMedium)
+                    Text("${formatDuration(clip.durationMs)} • ${formatBytes(clip.sizeBytes)}")
+                    OutlinedButton(onClick = { onSelectClip(clip.id) }) { Text("Phát clip") }
+                }
+            }
+        }
+    }
+}
+
+private fun formatRecordingTime(value: Long): String =
+    SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(value))
+
+private fun formatDuration(value: Long?): String {
+    if (value == null) return "Chưa rõ thời lượng"
+    val seconds = value / 1000
+    return "%02d:%02d".format(seconds / 60, seconds % 60)
 }
 
 @Composable

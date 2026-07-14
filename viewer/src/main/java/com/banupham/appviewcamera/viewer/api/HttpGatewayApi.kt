@@ -66,6 +66,22 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         request("DELETE", "/api/storage/drives/${encode(driveId)}")
     }
 
+    override suspend fun recordingStatus(): RecordingStatus =
+        GatewayJsonParser.recordingStatus(request("GET", "/api/recording"))
+
+    override suspend fun updateRecording(enabled: Boolean, localRetentionMinutes: Int): RecordingStatus {
+        val body = JSONObject().apply {
+            put("enabled", enabled)
+            put("local_retention_minutes", localRetentionMinutes)
+        }.toString()
+        return GatewayJsonParser.recordingStatus(request("PUT", "/api/recording", body, STORAGE_TIMEOUT_MS))
+    }
+
+    override suspend fun recordings(cameraId: String?): List<RecordingClip> {
+        val suffix = cameraId?.let { "?camera_id=${encode(it)}" }.orEmpty()
+        return GatewayJsonParser.recordings(request("GET", "/api/recordings$suffix", readTimeoutMs = STORAGE_TIMEOUT_MS))
+    }
+
     private suspend fun request(
         method: String,
         path: String,

@@ -1,3 +1,5 @@
+import json
+
 from appviewcamera_gateway.config import CameraStore, GatewaySettings, read_secrets
 from appviewcamera_gateway.mediamtx import camera_source, render_mediamtx_config
 
@@ -33,3 +35,31 @@ def test_mediamtx_only_contains_enabled_cameras(gateway_home):
     rendered = render_mediamtx_config(settings, cameras)
     assert list(rendered["paths"]) == ["one"]
     assert rendered["paths"]["one"]["sourceOnDemand"] is True
+
+
+def test_mediamtx_records_substream_only_when_globally_enabled(gateway_home):
+    settings = GatewaySettings.load(gateway_home)
+    recording_path = gateway_home / "config" / "recording.json"
+    recording = json.loads(recording_path.read_text(encoding="utf-8"))
+    recording["recording"]["enabled"] = True
+    recording_path.write_text(json.dumps(recording), encoding="utf-8")
+    cameras = [
+        {
+            "id": "one",
+            "host": "192.0.2.1",
+            "main_path": "main",
+            "sub_path": "sub",
+            "relay_path": "one",
+            "enabled": True,
+            "record_enabled": True,
+        }
+    ]
+
+    rendered = render_mediamtx_config(settings, cameras)
+
+    assert "record" not in rendered["paths"]["one"]
+    record_path = rendered["paths"]["record_one"]
+    assert record_path["source"].endswith("/sub")
+    assert record_path["record"] is True
+    assert record_path["recordSegmentDuration"] == "60s"
+    assert record_path["recordDeleteAfter"] == "60m"

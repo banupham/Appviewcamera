@@ -63,3 +63,19 @@ data class GoogleDriveMutation(
     val displayName: String,
     val oauthToken: String
 )
+
+data class RecordingStatus(
+    val enabled: Boolean,
+    val localRetentionMinutes: Int,
+    val clipCount: Int,
+    val diskFreeBytes: Long,
+    val diskTotalBytes: Long
+)
+
+data class RecordingClip(
+    val id: String,
+    val cameraId: String,
+    val startedAtMs: Long,
+    val durationMs: Long?,
+    val sizeBytes: Long
+)

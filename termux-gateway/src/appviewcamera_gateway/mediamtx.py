@@ -7,12 +7,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .config import CameraStore, GatewaySettings, read_secrets
+from .recording import load_recording_config
 
 
 LOGGER = logging.getLogger("appviewcamera.mediamtx")
 
 
-def camera_source(camera: dict, secrets: dict[str, str]) -> str:
+def camera_source(camera: dict, secrets: dict[str, str], path_key: str = "main_path") -> str:
     username = quote(str(camera.get("username", "")), safe="")
     password = quote(secrets.get(str(camera.get("secret_ref", "")), ""), safe="")
     credentials = ""
@@ -21,12 +22,14 @@ def camera_source(camera: dict, secrets: dict[str, str]) -> str:
         if password:
             credentials += f":{password}"
         credentials += "@"
-    path = "/" + str(camera.get("main_path", "")).lstrip("/")
+    path = "/" + str(camera.get(path_key, "")).lstrip("/")
     return f"rtsp://{credentials}{camera['host']}:{int(camera.get('port', 554))}{path}"
 
 
 def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> dict:
     secrets = read_secrets(settings.secrets_path)
+    recording = load_recording_config(settings)
+    recording_root = (settings.home / recording["root"]).resolve()
     paths: dict[str, dict] = {}
     for camera in cameras:
         if not camera.get("enabled", True):
@@ -36,6 +39,20 @@ def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> di
             "rtspTransport": "tcp",
             "sourceOnDemand": True,
         }
+        if recording["enabled"] and camera.get("record_enabled", True):
+            path_key = "sub_path" if recording["prefer_substream"] and camera.get("sub_path") else "main_path"
+            camera_id = str(camera["id"])
+            paths[f"record_{camera_id}"] = {
+                "source": camera_source(camera, secrets, path_key),
+                "rtspTransport": "tcp",
+                "sourceOnDemand": False,
+                "record": True,
+                "recordPath": str(recording_root / camera_id / "%Y-%m-%d" / "%Y-%m-%d_%H-%M-%S-%f"),
+                "recordFormat": "fmp4",
+                "recordPartDuration": f"{recording['part_duration_seconds']}s",
+                "recordSegmentDuration": f"{recording['segment_duration_seconds']}s",
+                "recordDeleteAfter": f"{recording['local_retention_minutes']}m",
+            }
     return {
         "logLevel": "info",
         "rtsp": True,

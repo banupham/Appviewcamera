@@ -10,6 +10,8 @@ import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.HttpGatewayApi
 import com.banupham.appviewcamera.viewer.api.GoogleDriveAccount
 import com.banupham.appviewcamera.viewer.api.GoogleDriveMutation
+import com.banupham.appviewcamera.viewer.api.RecordingClip
+import com.banupham.appviewcamera.viewer.api.RecordingStatus
 import com.banupham.appviewcamera.viewer.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.settings.GatewayConfigStore
@@ -27,6 +29,9 @@ data class ViewerUiState(
     val cameras: List<CameraSummary> = emptyList(),
     val candidates: List<DiscoveryCandidate> = emptyList(),
     val drives: List<GoogleDriveAccount> = emptyList(),
+    val recordingStatus: RecordingStatus? = null,
+    val recordings: List<RecordingClip> = emptyList(),
+    val selectedRecordingId: String? = null,
     val selectedCameraId: String? = null,
     val loading: Boolean = false,
     val message: String? = null
@@ -78,15 +83,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val status = async { api.status() }
                 val cameras = async { api.cameras() }
                 val drives = async { api.drives() }
-                Triple(status.await(), cameras.await(), drives.await())
-            }.onSuccess { (gatewayStatus, cameras, drives) ->
+                val recording = async { api.recordingStatus() }
+                RefreshPayload(status.await(), cameras.await(), drives.await(), recording.await())
+            }.onSuccess { payload ->
+                val gatewayStatus = payload.gatewayStatus
+                val cameras = payload.cameras
                 _state.update { current ->
                     val selected = current.selectedCameraId?.takeIf { id -> cameras.any { it.id == id } }
                         ?: cameras.firstOrNull { it.enabled }?.id
                     current.copy(
                         gatewayStatus = gatewayStatus,
                         cameras = cameras,
-                        drives = drives,
+                        drives = payload.drives,
+                        recordingStatus = payload.recordingStatus,
                         selectedCameraId = selected,
                         loading = false,
                         message = null
@@ -150,6 +159,38 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(drives = api.drives(), loading = false, message = "Đã xóa tài khoản Drive") }
     }
 
+    fun loadRecordings(cameraId: String? = _state.value.selectedCameraId) =
+        launchApiAction("Đang đọc danh sách clip…") { api ->
+            val clips = api.recordings(cameraId)
+            _state.update { current ->
+                current.copy(
+                    recordings = clips,
+                    selectedRecordingId = current.selectedRecordingId?.takeIf { id -> clips.any { it.id == id } }
+                        ?: clips.firstOrNull()?.id,
+                    loading = false,
+                    message = if (clips.isEmpty()) "Chưa có clip hoàn tất" else null
+                )
+            }
+        }
+
+    fun setRecordingEnabled(enabled: Boolean, retentionMinutes: Int = 60) =
+        launchApiAction(if (enabled) "Đang bật ghi hình…" else "Đang tắt ghi hình…") { api ->
+            val status = api.updateRecording(enabled, retentionMinutes)
+            _state.update {
+                it.copy(
+                    recordingStatus = status,
+                    loading = false,
+                    message = if (enabled) "Đã bật ghi hình; clip đầu tiên có sau khoảng 60 giây" else "Đã tắt ghi hình"
+                )
+            }
+        }
+
+    fun selectRecording(recordingId: String) {
+        _state.update { current ->
+            if (current.recordings.any { it.id == recordingId }) current.copy(selectedRecordingId = recordingId) else current
+        }
+    }
+
     private fun launchApiAction(progress: String, block: suspend (HttpGatewayApi) -> Unit) {
         val config = _state.value.config.validate().getOrElse { error ->
             _state.update { it.copy(message = error.message) }
@@ -166,3 +207,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(message = null) }
     }
 }
+
+private data class RefreshPayload(
+    val gatewayStatus: GatewayStatus,
+    val cameras: List<CameraSummary>,
+    val drives: List<GoogleDriveAccount>,
+    val recordingStatus: RecordingStatus
+)

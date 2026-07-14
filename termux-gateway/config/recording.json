@@ -1,7 +1,12 @@
 {
   "recording": {
+    "enabled": false,
     "root": "recordings",
-    "format": "mp4",
+    "format": "fmp4",
+    "segment_duration_seconds": 60,
+    "part_duration_seconds": 1,
+    "local_retention_minutes": 60,
+    "prefer_substream": true,
     "keep_uploaded_local_hours": 12,
     "failed_file_days": 7,
     "pre_record_seconds": 10,

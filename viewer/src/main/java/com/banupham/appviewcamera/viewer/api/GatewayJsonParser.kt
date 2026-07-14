@@ -82,6 +82,35 @@ object GatewayJsonParser {
         }
     }
 
+    fun recordingStatus(payload: String): RecordingStatus {
+        val root = JSONObject(payload)
+        return RecordingStatus(
+            enabled = root.optBoolean("enabled", false),
+            localRetentionMinutes = root.optInt("local_retention_minutes", 60),
+            clipCount = root.optInt("clip_count", 0),
+            diskFreeBytes = root.optLong("disk_free_bytes", 0),
+            diskTotalBytes = root.optLong("disk_total_bytes", 0)
+        )
+    }
+
+    fun recordings(payload: String): List<RecordingClip> {
+        val array = JSONObject(payload).getJSONArray("clips")
+        return buildList {
+            repeat(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                add(
+                    RecordingClip(
+                        id = item.getString("id"),
+                        cameraId = item.getString("camera_id"),
+                        startedAtMs = item.getLong("started_at_ms"),
+                        durationMs = item.optionalLong("duration_ms"),
+                        sizeBytes = item.getLong("size_bytes")
+                    )
+                )
+            }
+        }
+    }
+
     private fun JSONObject.optionalLong(name: String): Long? =
         if (has(name) && !isNull(name)) getLong(name) else null
 }

@@ -61,3 +61,24 @@ def test_drive_api_never_returns_oauth_token(gateway_home):
         assert router.route("DELETE", "/api/storage/drives/drive01", headers)[1] == {"deleted": True}
     finally:
         loop.close()
+
+
+def test_recording_can_be_enabled_through_api(gateway_home):
+    router, loop = make_router(gateway_home)
+    headers = "Bearer test-token"
+    try:
+        code, initial = router.route("GET", "/api/recording", headers)
+        assert code == 200
+        assert initial["enabled"] is False
+
+        code, updated = router.route(
+            "PUT",
+            "/api/recording",
+            headers,
+            json.dumps({"enabled": True, "local_retention_minutes": 30}).encode(),
+        )
+        assert code == 200
+        assert updated["enabled"] is True
+        assert updated["local_retention_minutes"] == 30
+    finally:
+        loop.close()
