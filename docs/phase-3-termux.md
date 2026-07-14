@@ -27,3 +27,14 @@ Viewer vẫn là Android native.
 - Viewer live qua API cấu hình mới.
 
 Các phần này tiếp tục theo thứ tự roadmap sau khi Giai đoạn 3 được xác nhận trên thiết bị.
+
+## Cập nhật an toàn
+
+Các lần sau chỉ cần một lệnh:
+
+```bash
+~/appviewcamera-source/termux-gateway/scripts/update.sh
+```
+
+Script tự pull `origin/main` theo fast-forward và từ chối installer cũ có pip/Pydantic để không tái diễn lỗi
+`pydantic-core`/`maturin` trên Android.

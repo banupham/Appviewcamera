@@ -30,6 +30,18 @@ Xem trạng thái:
 ~/appviewcamera/scripts/status.sh
 ```
 
+## Cập nhật từ GitHub
+
+Nếu source được clone tại `~/appviewcamera-source`, từ các phiên bản sau chỉ cần chạy:
+
+```bash
+~/appviewcamera-source/termux-gateway/scripts/update.sh
+```
+
+Script tự kiểm tra đúng repo `banupham/Appviewcamera`, đúng nhánh `main`, chạy `git pull --ff-only`, tự nạp lại
+script mới rồi stop/install/start Gateway. Nếu phát hiện installer cũ còn pip, Pydantic hoặc maturin, script dừng trước
+khi thay đổi bản đang hoạt động. Các file trong `~/appviewcamera/config` được giữ nguyên.
+
 Dừng dịch vụ:
 
 ```bash
