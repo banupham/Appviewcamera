@@ -43,7 +43,7 @@ chmod 600 "$APP_HOME/config/rclone.conf"
 
 echo "[4/5] Tải MediaMTX $MEDIAMTX_VERSION"
 case "$(uname -m)" in
-  aarch64|arm64) ARCHIVE_ARCH="arm64v8" ;;
+  aarch64|arm64) ARCHIVE_ARCH="arm64" ;;
   armv7l|armv8l) ARCHIVE_ARCH="armv7" ;;
   x86_64|amd64) ARCHIVE_ARCH="amd64" ;;
   *) echo "Kiến trúc $(uname -m) chưa được hỗ trợ." >&2; exit 1 ;;
