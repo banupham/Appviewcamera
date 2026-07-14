@@ -1,0 +1,59 @@
+name: Android build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Run unit tests
+        run: ./gradlew test --stacktrace
+
+      - name: Build Gateway and Viewer
+        run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
+
+      - name: Upload Gateway APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-debug.apk
+          path: gateway/build/outputs/apk/debug/gateway-debug.apk
+          if-no-files-found: error
+
+      - name: Upload Viewer APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewer-debug.apk
+          path: viewer/build/outputs/apk/debug/viewer-debug.apk
+          if-no-files-found: error
+
+      - name: Upload reports after failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-reports
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+          if-no-files-found: ignore
