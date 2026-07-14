@@ -1,57 +1,53 @@
 # AppViewCamera
 
-Hệ thống camera Android gồm hai ứng dụng được xây dựng mới hoàn toàn:
-
-- **Gateway:** chạy trên điện thoại Android đặt cùng LAN với camera IP.
-- **Viewer:** kết nối tới Gateway qua mạng riêng Tailscale để xem trực tiếp, xem lại và quản lý lưu trữ.
-
-Mục tiêu kiến trúc là không mở NAT, không port forwarding và không công khai camera trực tiếp ra Internet. Tailscale được cài độc lập; ứng dụng chỉ dùng IP Tailscale như địa chỉ mạng bình thường.
-
-## Trạng thái hiện tại
-
-Giai đoạn 2 đã bổ sung quản lý camera trong Gateway và kiểm tra RTSP thật bằng Media3. Gateway lưu cấu hình bằng Room, mã hóa mật khẩu với Android Keystore và hiển thị codec/độ phân giải/FPS/bitrate nếu camera cung cấp. Chưa tuyên bố RTSP relay, ghi hình, motion detection, REST API hoặc Google Drive hoạt động.
+Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera chạy
+**Termux Gateway**, còn điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua
+Tailscale như một mạng IP riêng.
 
 ```text
-Appviewcamera/
-├── gateway/    APK chạy tại nơi đặt camera
-├── viewer/     APK chạy trên điện thoại người dùng
-├── docs/       Tài liệu theo từng giai đoạn
-└── .github/    Quy trình test và build APK
+Camera IP --RTSP/LAN--> Termux Gateway --RTSP/API/Tailscale--> Viewer APK
+                              |
+                              +-- SQLite / recordings / rclone / Google Drive
 ```
 
-## Build không cần Android Studio
+## Trạng thái
 
-Yêu cầu JDK 17 và Android SDK Command-line Tools với Android API 35.
+- Giai đoạn 1: project Android và hai APK tối thiểu — hoàn thành.
+- Giai đoạn 2: quản lý camera và kiểm tra RTSP trong Gateway APK thử nghiệm — hoàn thành.
+- Giai đoạn 3: chuyển Gateway runtime sang Termux, tự quét LAN và relay MediaMTX — đang thực hiện.
 
-Windows:
+Gateway APK cũ đang được giữ làm bản đối chiếu cho đến khi Termux Gateway được kiểm thử trên
+điện thoại thật. Viewer APK tiếp tục được phát triển và build trên GitHub.
 
-```powershell
-.\gradlew.bat test
-.\gradlew.bat :gateway:assembleDebug :viewer:assembleDebug
-```
+## Termux Gateway MVP
 
-Linux/macOS:
+Mã nguồn nằm tại `termux-gateway/` và hiện cung cấp:
 
-```bash
-./gradlew test
-./gradlew :gateway:assembleDebug :viewer:assembleDebug
-```
+- API FastAPI có Bearer token.
+- Camera CRUD; mật khẩu tách khỏi `cameras.yaml`.
+- ONVIF WS-Discovery và quét các cổng LAN có giới hạn.
+- SQLite lưu camera tìm thấy, không quét lại toàn mạng để đọc danh sách.
+- Tự sinh cấu hình MediaMTX và relay RTSP không transcoding.
+- Giám sát MediaMTX, retry 5, 10, 30 rồi 60 giây.
+- Script cài đặt, start/stop/status/doctor và Termux:Boot.
+- Cấu hình ghi hình và nhiều Google Drive đã tách file; worker ghi/upload được triển khai ở các giai đoạn sau.
 
-Kết quả:
+Hướng dẫn cài và thử trên điện thoại: [termux-gateway/README.md](termux-gateway/README.md).
 
-```text
-gateway/build/outputs/apk/debug/gateway-debug.apk
-viewer/build/outputs/apk/debug/viewer-debug.apk
-```
+## Build trên GitHub
 
-GitHub Actions chạy cùng các lệnh và tải hai APK thành artifacts `gateway-debug.apk` và `viewer-debug.apk`.
+Hai workflow độc lập:
 
-## Tailscale
+- `Android build`: test Kotlin và tạo `gateway-debug.apk`, `viewer-debug.apk`.
+- `Termux Gateway`: test Python/shell và tạo `termux-gateway.zip`.
 
-1. Cài Tailscale trên cả Gateway và Viewer.
-2. Đăng nhập hai thiết bị vào cùng một tailnet.
-3. Bật kết nối Tailscale.
-4. Xem IP `100.x.x.x` của Gateway trong ứng dụng Tailscale; thiết bị có CLI có thể chạy `tailscale ip -4`.
-5. Không mở port trên router. Các giai đoạn sau sẽ cho Viewer cấu hình IP này, không hard-code trong source.
+Máy hiện tại không cần Android Studio hoặc Android SDK. Kết quả chính thức được xác nhận bằng
+GitHub Actions.
 
-Xem [báo cáo Giai đoạn 1](docs/phase-1.md), [báo cáo Giai đoạn 2](docs/phase-2.md), [xác nhận build](docs/build-verification.md), [database schema](docs/database-schema.md) và [kế hoạch triển khai](docs/roadmap.md).
+## Tài liệu
+
+- [Giai đoạn 1](docs/phase-1.md)
+- [Giai đoạn 2](docs/phase-2.md)
+- [Giai đoạn 3](docs/phase-3-termux.md)
+- [Database schema](docs/database-schema.md)
+- [Roadmap](docs/roadmap.md)

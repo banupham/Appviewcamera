@@ -1,0 +1,91 @@
+# Termux Gateway
+
+## Yêu cầu điện thoại
+
+1. Cài Termux và Termux:Boot từ cùng một nguồn, khuyến nghị F-Droid.
+2. Mở Termux:Boot một lần sau khi cài.
+3. Tắt tối ưu pin cho Termux, Termux:Boot và Tailscale.
+4. Bật Wi-Fi cùng LAN với camera và bật Tailscale.
+
+Không dùng bản Termux cũ trên Google Play.
+
+## Cài đặt
+
+Giải nén artifact `termux-gateway.zip`, mở Termux tại thư mục đã giải nén rồi chạy:
+
+```bash
+chmod +x termux-gateway/scripts/*.sh
+termux-gateway/scripts/install.sh
+~/appviewcamera/scripts/doctor.sh
+~/appviewcamera/scripts/start.sh
+```
+
+Installer cài Python, FFmpeg, rclone, tải MediaMTX ARM phù hợp, kiểm tra SHA-256, tạo API token
+và tạo `~/.termux/boot/20-appviewcamera-gateway`.
+
+Xem trạng thái:
+
+```bash
+~/appviewcamera/scripts/status.sh
+```
+
+Dừng dịch vụ:
+
+```bash
+~/appviewcamera/scripts/stop.sh
+```
+
+## Cấu hình
+
+Các file người dùng được giữ khi chạy lại installer:
+
+- `config/gateway.yaml`: API, SQLite, MediaMTX và phạm vi quét LAN.
+- `config/cameras.yaml`: camera, relay path; không chứa password.
+- `config/recording.yaml`: ghi hình và retention.
+- `config/google-drives.yaml`: danh sách remote và chính sách; không chứa OAuth token.
+- `config/secrets.env`: API token và password camera, quyền file `600`.
+- `config/rclone.conf`: do rclone tạo ở giai đoạn Google Drive, không trả về Viewer.
+
+Mặc định Gateway tự xác định subnet `/24`. Nếu thiết bị chọn sai card mạng, đặt rõ:
+
+```yaml
+discovery:
+  subnets: [192.168.1.0/24]
+```
+
+Không đặt subnet quá rộng. `max_hosts` mặc định chặn quét quá 256 địa chỉ.
+
+## Thêm camera qua API
+
+Đọc token chỉ trên Gateway:
+
+```bash
+TOKEN="$(sed -n 's/^API_TOKEN=//p' ~/appviewcamera/config/secrets.env)"
+```
+
+Quét LAN:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8080/api/discovery/scan
+```
+
+Thêm camera:
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"camera01","name":"Camera 01","host":"192.168.1.20","port":554,"username":"admin","password":"CHANGE_ME","main_path":"Streaming/Channels/101"}' \
+  http://127.0.0.1:8080/api/cameras/camera01
+```
+
+Viewer sẽ mở relay tại `rtsp://IP_TAILSCALE_GATEWAY:8554/camera01`.
+
+## Giới hạn MVP
+
+- Android có thể chặn multicast, vì vậy ONVIF có thể không thấy camera; quét TCP subnet vẫn chạy.
+- Binary MediaMTX Linux ARM64 phải được thử trên điện thoại đích. `doctor.sh` xác nhận file và
+  bước tương tác tiếp theo sẽ xác nhận process/RTSP thật.
+- `secrets.env` nằm trong sandbox Termux và không phải Android Keystore. Mã hóa yêu cầu mật khẩu
+  sẽ mâu thuẫn với tự khởi động không cần người dùng sau reboot.
+- Ghi clip, motion detection và upload rclone chưa được tuyên bố hoạt động ở MVP Giai đoạn 3.

@@ -1,0 +1,50 @@
+name: Termux Gateway
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: termux-gateway/pyproject.toml
+
+      - name: Install test dependencies
+        working-directory: termux-gateway
+        run: python -m pip install -e ".[test]"
+
+      - name: Compile Python sources
+        run: python -m compileall -q termux-gateway/src
+
+      - name: Run tests
+        working-directory: termux-gateway
+        run: pytest
+
+      - name: Check shell scripts
+        run: shellcheck termux-gateway/scripts/*.sh
+
+      - name: Package Termux Gateway
+        run: |
+          mkdir -p dist
+          zip -r dist/termux-gateway.zip termux-gateway \
+            -x 'termux-gateway/tests/*' 'termux-gateway/*.egg-info/*' '*/__pycache__/*'
+
+      - name: Upload Termux Gateway
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-gateway
+          path: dist/termux-gateway.zip
+          if-no-files-found: error

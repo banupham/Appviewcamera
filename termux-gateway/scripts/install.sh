@@ -1,0 +1,75 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+APP_HOME="${APPVIEWCAMERA_HOME:-$HOME/appviewcamera}"
+MEDIAMTX_VERSION="${MEDIAMTX_VERSION:-1.18.2}"
+
+if ! command -v pkg >/dev/null 2>&1; then
+  echo "Lỗi: script này phải chạy trong Termux." >&2
+  exit 1
+fi
+
+echo "[1/6] Cài gói Termux"
+pkg install -y python curl tar ffmpeg rclone
+
+echo "[2/6] Tạo thư mục $APP_HOME"
+mkdir -p "$APP_HOME"/{bin,config,data,logs,recordings,run,scripts,src}
+if [ "$SOURCE_DIR" != "$APP_HOME" ]; then
+  cp "$SOURCE_DIR/pyproject.toml" "$APP_HOME/pyproject.toml"
+  cp -R "$SOURCE_DIR/src/." "$APP_HOME/src/"
+  cp -R "$SOURCE_DIR/scripts/." "$APP_HOME/scripts/"
+  cp "$SOURCE_DIR/README.md" "$APP_HOME/README.md"
+  for config in gateway.yaml cameras.yaml recording.yaml google-drives.yaml; do
+    if [ ! -f "$APP_HOME/config/$config" ]; then
+      cp "$SOURCE_DIR/config/$config" "$APP_HOME/config/$config"
+    fi
+  done
+fi
+
+echo "[3/6] Tạo Python virtual environment"
+python -m venv "$APP_HOME/.venv"
+"$APP_HOME/.venv/bin/python" -m pip install --upgrade pip
+"$APP_HOME/.venv/bin/pip" install "$APP_HOME"
+
+echo "[4/6] Tạo API token"
+SECRETS_FILE="$APP_HOME/config/secrets.env"
+if [ ! -s "$SECRETS_FILE" ]; then
+  TOKEN="$("$APP_HOME/.venv/bin/python" -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  printf 'API_TOKEN=%s\n' "$TOKEN" > "$SECRETS_FILE"
+fi
+chmod 600 "$SECRETS_FILE"
+touch "$APP_HOME/config/rclone.conf"
+chmod 600 "$APP_HOME/config/rclone.conf"
+
+echo "[5/6] Tải MediaMTX $MEDIAMTX_VERSION"
+case "$(uname -m)" in
+  aarch64|arm64) ARCHIVE_ARCH="arm64v8" ;;
+  armv7l|armv8l) ARCHIVE_ARCH="armv7" ;;
+  x86_64|amd64) ARCHIVE_ARCH="amd64" ;;
+  *) echo "Kiến trúc $(uname -m) chưa được hỗ trợ." >&2; exit 1 ;;
+esac
+ARCHIVE="mediamtx_v${MEDIAMTX_VERSION}_linux_${ARCHIVE_ARCH}.tar.gz"
+BASE_URL="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}"
+TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEMP_DIR"' EXIT
+curl --fail --location --retry 3 --output "$TEMP_DIR/$ARCHIVE" "$BASE_URL/$ARCHIVE"
+curl --fail --location --retry 3 --output "$TEMP_DIR/checksums.sha256" "$BASE_URL/checksums.sha256"
+EXPECTED="$(grep "  $ARCHIVE\$" "$TEMP_DIR/checksums.sha256")"
+[ -n "$EXPECTED" ] || { echo "Không tìm thấy checksum của $ARCHIVE" >&2; exit 1; }
+(cd "$TEMP_DIR" && printf '%s\n' "$EXPECTED" | sha256sum --check -)
+tar -xzf "$TEMP_DIR/$ARCHIVE" -C "$TEMP_DIR"
+install -m 700 "$TEMP_DIR/mediamtx" "$APP_HOME/bin/mediamtx"
+
+echo "[6/6] Cấu hình tự chạy sau reboot"
+mkdir -p "$HOME/.termux/boot"
+BOOT_SCRIPT="$HOME/.termux/boot/20-appviewcamera-gateway"
+printf '%s\n' '#!/data/data/com.termux/files/usr/bin/bash' > "$BOOT_SCRIPT"
+printf '%s\n' 'command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock' >> "$BOOT_SCRIPT"
+printf 'APPVIEWCAMERA_HOME=%q %q\n' "$APP_HOME" "$APP_HOME/scripts/start.sh" >> "$BOOT_SCRIPT"
+chmod 700 "$BOOT_SCRIPT" "$APP_HOME/scripts/"*.sh
+
+echo
+echo "Cài đặt hoàn tất. API token nằm trong: $SECRETS_FILE"
+echo "Chạy: $APP_HOME/scripts/start.sh"
+echo "Kiểm tra: $APP_HOME/scripts/doctor.sh"
