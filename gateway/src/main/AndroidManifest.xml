@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
+        android:name=".GatewayApplication"
         android:allowBackup="false"
         android:label="Camera Gateway"
         android:supportsRtl="true"

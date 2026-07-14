@@ -9,7 +9,7 @@ Mục tiêu kiến trúc là không mở NAT, không port forwarding và không 
 
 ## Trạng thái hiện tại
 
-Giai đoạn 1 cung cấp hai Android application tối thiểu có thể build độc lập, giao diện Compose nền tảng và unit test cho trạng thái/điều hướng. Chưa tuyên bố RTSP relay, ghi hình, motion detection, REST API hoặc Google Drive hoạt động.
+Giai đoạn 2 đã bổ sung quản lý camera trong Gateway và kiểm tra RTSP thật bằng Media3. Gateway lưu cấu hình bằng Room, mã hóa mật khẩu với Android Keystore và hiển thị codec/độ phân giải/FPS/bitrate nếu camera cung cấp. Chưa tuyên bố RTSP relay, ghi hình, motion detection, REST API hoặc Google Drive hoạt động.
 
 ```text
 Appviewcamera/
@@ -54,4 +54,4 @@ GitHub Actions chạy cùng các lệnh và tải hai APK thành artifacts `gate
 4. Xem IP `100.x.x.x` của Gateway trong ứng dụng Tailscale; thiết bị có CLI có thể chạy `tailscale ip -4`.
 5. Không mở port trên router. Các giai đoạn sau sẽ cho Viewer cấu hình IP này, không hard-code trong source.
 
-Xem [báo cáo Giai đoạn 1](docs/phase-1.md) và [kế hoạch triển khai](docs/roadmap.md).
+Xem [báo cáo Giai đoạn 1](docs/phase-1.md), [báo cáo Giai đoạn 2](docs/phase-2.md), [database schema](docs/database-schema.md) và [kế hoạch triển khai](docs/roadmap.md).

@@ -2,8 +2,8 @@
 
 Các giai đoạn được thực hiện tuần tự; mỗi giai đoạn phải build, test và báo cáo giới hạn trước khi tiếp tục.
 
-1. Khởi tạo project và APK tối thiểu.
-2. Quản lý camera và kiểm tra RTSP.
+1. ✅ Khởi tạo project và APK tối thiểu.
+2. ✅ Quản lý camera và kiểm tra RTSP.
 3. RTSP relay.
 4. Viewer xem live qua LAN.
 5. Viewer xem qua Tailscale.
