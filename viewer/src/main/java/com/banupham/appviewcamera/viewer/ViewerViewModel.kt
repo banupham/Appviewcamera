@@ -18,7 +18,6 @@ import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.settings.GatewayConfigStore
 import com.banupham.appviewcamera.viewer.settings.PairingUriParser
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,18 +86,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(message = error.message ?: "Chuỗi ghép nối không hợp lệ") }
             return
         }
-        runCatching { configStore.save(config) }.onFailure { error ->
-            _state.update { it.copy(message = "Không lưu được ghép nối: ${error.message}") }
-            return
-        }
         _state.update {
             it.copy(
                 config = config,
+                gatewayStatus = null,
                 gatewayConnectionError = null,
-                message = "Đã nhận cấu hình; đang kiểm tra Gateway…"
+                message = "Đã nhận cấu hình từ QR; bấm Lưu và kết nối để kiểm tra Gateway"
             )
         }
-        refresh()
     }
 
     fun refresh() {
@@ -111,12 +106,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(loading = true, message = null) }
             runCatching {
                 val api = HttpGatewayApi(config)
-                val status = async { api.status() }
-                val cameras = async { api.cameras() }
-                val drives = async { api.drives() }
-                val recording = async { api.recordingStatus() }
-                val storage = async { api.storageSummary() }
-                RefreshPayload(status.await(), cameras.await(), drives.await(), recording.await(), storage.await())
+                RefreshPayload(
+                    gatewayStatus = api.status(),
+                    cameras = api.cameras(),
+                    drives = api.drives(),
+                    recordingStatus = api.recordingStatus(),
+                    storageSummary = api.storageSummary()
+                )
             }.onSuccess { payload ->
                 val gatewayStatus = payload.gatewayStatus
                 val cameras = payload.cameras

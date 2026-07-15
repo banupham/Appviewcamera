@@ -13,7 +13,7 @@ fi
 echo
 echo "========== KẾT NỐI APP VIEWER =========="
 echo "Viewer cùng điện thoại: 127.0.0.1"
-echo "Viewer điện thoại khác: dùng IP hiển thị trong ứng dụng Tailscale"
+echo "Viewer điện thoại khác: ưu tiên IP Tailscale nếu Gateway phát hiện được"
 echo "API port: 8080"
 echo "RTSP port: 8554"
 echo "API secret: $TOKEN"
@@ -29,16 +29,28 @@ else
   echo "Chưa có qrencode; chạy update.sh để cài bổ sung."
 fi
 
+ip_addresses() {
+  if command -v ip >/dev/null 2>&1; then
+    ip -o -4 addr show up scope global 2>/dev/null \
+      | awk '{split($4, address, "/"); print address[1]}'
+  fi
+}
+
+detect_tailscale_ip() {
+  ip_addresses | awk -F. '$1 == 100 && $2 >= 64 && $2 <= 127 {print; exit}'
+}
+
 detect_lan_ip() {
   if [ -n "${PAIR_HOST:-}" ]; then
     printf '%s\n' "$PAIR_HOST"
     return
   fi
-  if command -v ip >/dev/null 2>&1; then
-    IP_OUTPUT="$(ip -o -4 addr show up scope global 2>/dev/null || true)"
-    printf '%s\n' "$IP_OUTPUT" \
-      | awk '$2 !~ /^(lo|tun|tailscale)/ {split($4, address, "/"); print address[1]; exit}'
+  TAILSCALE_IP="$(detect_tailscale_ip)"
+  if [ -n "$TAILSCALE_IP" ]; then
+    printf '%s\n' "$TAILSCALE_IP"
+    return
   fi
+  ip_addresses | awk -F. '($1 != 100 || $2 < 64 || $2 > 127) {print; exit}'
 }
 
 LAN_IP="$(detect_lan_ip)"

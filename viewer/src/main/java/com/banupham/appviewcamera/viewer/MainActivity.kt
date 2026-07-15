@@ -628,7 +628,7 @@ private fun SettingsScreen(
                 ) { Text("Dán chuỗi ghép nối") }
             }
         }
-        item { Text("Cùng điện thoại: sao chép chuỗi trong Termux rồi chọn Dán. Khác điện thoại: quét QR LAN/Tailscale.") }
+        item { Text("Quét QR hoặc dán chuỗi chỉ điền cấu hình vào form. App chỉ kết nối sau khi bấm Lưu và kết nối.") }
         item { OutlinedTextField(host, { host = it }, modifier = Modifier.fillMaxWidth(), label = { Text("IP LAN hoặc Tailscale") }) }
         item {
             OutlinedTextField(
