@@ -295,7 +295,8 @@ class GatewayDatabase:
             rows = connection.execute(
                 "SELECT id, camera_id, started_at_ms, duration_ms, size_bytes, "
                 "clip_state, local_state, upload_state, remote_id, remote_path, remote_file_id, "
-                "remote_size_bytes, remote_verified_at_ms, uploaded_at_ms, last_error, protected, motion "
+                "remote_size_bytes, remote_verified_at_ms, uploaded_at_ms, upload_attempts, "
+                "next_retry_ms, last_error, protected, motion "
                 f"FROM recording_clips{where} ORDER BY started_at_ms DESC LIMIT ?",
                 values,
             ).fetchall()

@@ -109,6 +109,10 @@ def test_worker_uploads_pending_clip_and_marks_verified(gateway_home, monkeypatc
     old = clip.stat().st_mtime - 5
     os.utime(clip, (old, old))
     monkeypatch.setattr(RecordingManager, "_probe_duration_ms", staticmethod(lambda _: 60_000))
+    healthy_usage = type(
+        "Usage", (), {"total": 10 * 1024**3, "used": 2 * 1024**3, "free": 8 * 1024**3}
+    )()
+    monkeypatch.setattr("appviewcamera_gateway.recording.shutil.disk_usage", lambda _: healthy_usage)
 
     class FakeDrive:
         uploaded = []
