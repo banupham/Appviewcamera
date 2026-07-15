@@ -71,6 +71,8 @@ def test_mediamtx_records_substream_only_when_globally_enabled(gateway_home):
     rendered = render_mediamtx_config(settings, cameras)
 
     assert "record" not in rendered["paths"]["one"]
+    assert rendered["paths"]["one_sub"]["source"].endswith("/sub")
+    assert rendered["paths"]["one_sub"]["sourceOnDemand"] is True
     record_path = rendered["paths"]["record_one"]
     assert record_path["source"].endswith("/sub")
     assert record_path["record"] is True

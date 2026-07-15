@@ -47,6 +47,7 @@ import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.CameraSummary
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
 import com.banupham.appviewcamera.viewer.player.PlaybackPlayer
+import com.banupham.appviewcamera.viewer.live.MultiCameraLiveScreen
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.text.SimpleDateFormat
@@ -134,7 +135,7 @@ private fun ViewerScreen(
             }
             if (state.loading) CircularProgressIndicator()
             when (selectedSection) {
-                ViewerSection.LIVE -> LiveScreen(state, viewModel::selectCamera)
+                ViewerSection.LIVE -> MultiCameraLiveScreen(state, viewModel::selectCamera)
                 ViewerSection.PLAYBACK -> PlaybackScreen(
                     state = state,
                     onSelectCamera = viewModel::selectCamera,
