@@ -110,3 +110,31 @@ def test_recording_protection_endpoint(gateway_home):
         assert clip["protected"] == 1
     finally:
         loop.close()
+
+
+def test_drive_oauth_start_is_exposed_without_returning_token(gateway_home, monkeypatch):
+    router, loop = make_router(gateway_home)
+    monkeypatch.setattr(
+        router.runtime.drive_oauth,
+        "start",
+        lambda remote_id, display_name: {
+            "session_id": "session01",
+            "remote_id": remote_id,
+            "display_name": display_name,
+            "status": "WAITING_BROWSER",
+            "authorization_url": "https://accounts.google.com/example",
+            "error": None,
+        },
+    )
+    try:
+        code, response = router.route(
+            "POST",
+            "/api/storage/drives/oauth/start",
+            "Bearer test-token",
+            json.dumps({"id": "drive01", "display_name": "Drive 01"}).encode(),
+        )
+        assert code == 201
+        assert response["session_id"] == "session01"
+        assert "access_token" not in response
+    finally:
+        loop.close()

@@ -2,6 +2,7 @@ package com.banupham.appviewcamera.viewer.api
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Base64
 
 object GatewayJsonParser {
     fun cameras(payload: String): List<CameraSummary> {
@@ -94,6 +95,32 @@ object GatewayJsonParser {
             estimatedDailyBytes = root.optionalLong("estimated_daily_bytes"),
             estimatedRetentionSeconds = root.optionalLong("estimated_retention_seconds"),
             collectingStatistics = root.optBoolean("collecting_statistics", true)
+        )
+    }
+
+    fun driveOAuthSession(payload: String): DriveOAuthSession {
+        val root = JSONObject(payload)
+        return DriveOAuthSession(
+            sessionId = root.getString("session_id"),
+            remoteId = root.getString("remote_id"),
+            displayName = root.optString("display_name"),
+            status = root.optString("status", "ERROR"),
+            authorizationUrl = root.optString("authorization_url")
+                .takeIf { it.isNotBlank() && it != "null" },
+            error = root.optString("error").takeIf { it.isNotBlank() && it != "null" }
+        )
+    }
+
+    fun oauthProxyResponse(payload: String): OAuthProxyResponse {
+        val root = JSONObject(payload)
+        val headersObject = root.optJSONObject("headers") ?: JSONObject()
+        val headers = buildMap {
+            for (key in headersObject.keys()) put(key, headersObject.getString(key))
+        }
+        return OAuthProxyResponse(
+            status = root.optInt("status", 500),
+            headers = headers,
+            body = Base64.getDecoder().decode(root.optString("body_base64"))
         )
     }
 

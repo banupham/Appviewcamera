@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.io.IOException
 
 data class ViewerUiState(
     val config: GatewayConfig = GatewayConfig(),
@@ -38,6 +39,7 @@ data class ViewerUiState(
     val playbackDayStartMs: Long = startOfToday(),
     val selectedCameraId: String? = null,
     val loading: Boolean = false,
+    val gatewayConnectionError: String? = null,
     val message: String? = null
 ) {
     val selectedCamera: CameraSummary?
@@ -46,7 +48,12 @@ data class ViewerUiState(
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
     private val configStore = GatewayConfigStore(application, AndroidKeystoreCredentialCipher())
-    private val _state = MutableStateFlow(ViewerUiState(config = configStore.load()))
+    private val _state = MutableStateFlow(
+        runCatching { ViewerUiState(config = configStore.load()) }
+            .getOrElse {
+                ViewerUiState(message = "Không đọc được cài đặt cũ; hãy cấu hình lại Gateway")
+            }
+    )
     val state: StateFlow<ViewerUiState> = _state.asStateFlow()
     private var refreshJob: Job? = null
 
@@ -104,12 +111,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         recordingStatus = payload.recordingStatus,
                         selectedCameraId = selected,
                         loading = false,
+                        gatewayConnectionError = null,
                         message = null
                     )
                 }
             }.onFailure { error ->
                 _state.update {
-                    it.copy(loading = false, gatewayStatus = null, message = error.message ?: "Kết nối thất bại")
+                    val text = "Không kết nối được Gateway: ${error.message ?: "không rõ lỗi"}"
+                    it.copy(
+                        loading = false,
+                        gatewayStatus = null,
+                        gatewayConnectionError = text,
+                        message = text
+                    )
                 }
             }
         }
@@ -151,6 +165,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val drives = api.drives()
         _state.update { it.copy(drives = drives, loading = false, message = "Đã lưu ${drive.displayName}") }
     }
+
+    fun authorizeDrive(remoteId: String, displayName: String) =
+        launchApiAction("Đang chuẩn bị đăng nhập Google…") { api ->
+            DriveOAuthCoordinator(getApplication(), api).authorize(remoteId, displayName)
+            val account = api.refreshDrive(remoteId)
+            _state.update {
+                it.copy(
+                    drives = api.drives(),
+                    storageSummary = api.storageSummary(),
+                    loading = false,
+                    message = if (account.status == "ONLINE") {
+                        "Đã kết nối Google Drive"
+                    } else {
+                        account.lastError ?: "Đã lưu tài khoản nhưng chưa kiểm tra được Internet"
+                    }
+                )
+            }
+        }
 
     fun refreshDrive(driveId: String) = launchApiAction("Đang kiểm tra Google Drive…") { api ->
         api.refreshDrive(driveId)
@@ -241,7 +273,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _state.update { it.copy(loading = true, message = progress) }
             runCatching { block(HttpGatewayApi(config)) }
-                .onFailure { error -> _state.update { it.copy(loading = false, message = error.message ?: "Thao tác thất bại") } }
+                .onSuccess { _state.update { it.copy(gatewayConnectionError = null) } }
+                .onFailure { error ->
+                    _state.update {
+                        val text = error.message ?: "Thao tác thất bại"
+                        it.copy(
+                            loading = false,
+                            gatewayConnectionError = if (error is IOException) {
+                                "Không kết nối được Gateway: $text"
+                            } else {
+                                it.gatewayConnectionError
+                            },
+                            message = text
+                        )
+                    }
+                }
         }
     }
 

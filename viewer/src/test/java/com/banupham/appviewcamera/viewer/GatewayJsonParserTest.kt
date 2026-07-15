@@ -56,4 +56,19 @@ class GatewayJsonParserTest {
         assertEquals(800_000L, summary.averageBitrateBps)
         assertEquals(7_200L, summary.estimatedRetentionSeconds)
     }
+
+    @Test
+    fun parsesDriveOAuthWithoutToken() {
+        val session = GatewayJsonParser.driveOAuthSession(
+            """{"session_id":"s1","remote_id":"drive01","display_name":"Drive 01","status":"WAITING_BROWSER","authorization_url":"https://accounts.google.com/example","error":null}"""
+        )
+        val proxy = GatewayJsonParser.oauthProxyResponse(
+            """{"status":302,"headers":{"Location":"https://example.com"},"body_base64":"b2s="}"""
+        )
+
+        assertEquals("s1", session.sessionId)
+        assertEquals("WAITING_BROWSER", session.status)
+        assertEquals(302, proxy.status)
+        assertEquals("ok", proxy.body.toString(Charsets.UTF_8))
+    }
 }

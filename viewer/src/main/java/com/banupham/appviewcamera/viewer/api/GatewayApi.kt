@@ -10,6 +10,9 @@ interface GatewayApi {
     suspend fun drives(): List<GoogleDriveAccount>
     suspend fun storageSummary(): StorageSummary
     suspend fun addDrive(drive: GoogleDriveMutation): GoogleDriveAccount
+    suspend fun startDriveOAuth(remoteId: String, displayName: String): DriveOAuthSession
+    suspend fun driveOAuthStatus(sessionId: String): DriveOAuthSession
+    suspend fun forwardDriveOAuthCallback(sessionId: String, path: String): OAuthProxyResponse
     suspend fun refreshDrive(driveId: String): GoogleDriveAccount
     suspend fun activateDrive(driveId: String): GoogleDriveAccount
     suspend fun deleteDrive(driveId: String)

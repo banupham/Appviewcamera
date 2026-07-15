@@ -30,6 +30,12 @@ Xem trạng thái:
 ~/appviewcamera/scripts/status.sh
 ```
 
+Mỗi lần `start.sh` chạy thành công, Termux tự hiển thị API secret, API/RTSP port và chuỗi ghép nối Viewer. Có thể hiện lại bất cứ lúc nào bằng:
+
+```bash
+~/appviewcamera/scripts/pairing.sh
+```
+
 ## Cập nhật từ GitHub
 
 Nếu source được clone tại `~/appviewcamera-source`, từ các phiên bản sau chỉ cần chạy:
@@ -111,6 +117,10 @@ Viewer sẽ mở relay tại `rtsp://IP_TAILSCALE_GATEWAY:8554/camera01`.
 - Viewer chọn camera/ngày và phát clip local; nếu chỉ còn trên Drive, Gateway tải vào cache rồi phát bằng HTTP Range.
 - Camera Hikvision bật `motion_enabled` dùng ISAPI port 80 để đánh dấu và bảo vệ clip chuyển động.
 
+## Thêm Google Drive hoàn toàn từ Viewer
+
+Trong tab `Lưu trữ`, chọn `Thêm Google Drive`, nhập mã/tên rồi bấm `Đăng nhập Google`. Viewer mở trình duyệt ngoài; Gateway chạy `rclone authorize` nền, nhận callback và lưu token thẳng vào `rclone.conf`. Token không được trả về hoặc lưu trong Viewer. Không cần chạy lệnh tạo token trong Termux cho từng tài khoản.
+
 ## Giới hạn hiện tại
 
 - Android có thể chặn multicast, vì vậy ONVIF có thể không thấy camera; quét TCP subnet vẫn chạy.
@@ -119,5 +129,5 @@ Viewer sẽ mở relay tại `rtsp://IP_TAILSCALE_GATEWAY:8554/camera01`.
 - `secrets.env` nằm trong sandbox Termux và không phải Android Keystore. Mã hóa yêu cầu mật khẩu
   sẽ mâu thuẫn với tự khởi động không cần người dùng sau reboot.
 - Motion tự động hiện dùng sự kiện Hikvision ISAPI; camera hãng khác vẫn ghi liên tục và có thể bảo vệ clip thủ công.
-- OAuth hiện nhận JSON token do `rclone authorize` tạo; Gateway không gửi token trở lại Viewer.
+- OAuth cần trình duyệt trên điện thoại Viewer và Internet trong lúc đăng nhập Google.
 - Cần kiểm thử thực tế chuỗi mất mạng → có mạng → upload → phát lại Drive trước khi coi là bản phát hành ổn định.

@@ -56,12 +56,16 @@ fun RtspPlayer(
         var retryJob: Job? = null
         var attempt = 0
         fun prepare() {
-            val source = RtspMediaSource.Factory()
-                .setForceUseRtpTcp(true)
-                .createMediaSource(MediaItem.fromUri(url))
-            player.setMediaSource(source)
-            player.prepare()
-            player.playWhenReady = true
+            runCatching {
+                val source = RtspMediaSource.Factory()
+                    .setForceUseRtpTcp(true)
+                    .createMediaSource(MediaItem.fromUri(url))
+                player.setMediaSource(source)
+                player.prepare()
+                player.playWhenReady = true
+            }.onFailure { failure ->
+                error = "Không thể mở camera: ${failure.message ?: "URL RTSP không hợp lệ"}"
+            }
         }
         val listener = object : Player.Listener {
             override fun onPlayerError(playbackError: PlaybackException) {

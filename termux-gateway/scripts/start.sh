@@ -30,3 +30,4 @@ if ! kill -0 "$PID" 2>/dev/null; then
   exit 1
 fi
 echo "Gateway đã chạy với PID $PID"
+"$APP_HOME/scripts/pairing.sh"

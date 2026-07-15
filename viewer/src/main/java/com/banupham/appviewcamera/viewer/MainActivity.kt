@@ -42,7 +42,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.CameraSummary
-import com.banupham.appviewcamera.viewer.api.GoogleDriveMutation
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
 import com.banupham.appviewcamera.viewer.player.PlaybackPlayer
 import java.text.SimpleDateFormat
@@ -87,6 +86,20 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
                 state.gatewayStatus?.let { Text("Gateway: ${it.status}") }
             }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            state.gatewayConnectionError?.let { error ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Gateway đang ngoại tuyến", style = MaterialTheme.typography.titleMedium)
+                        Text(error, color = MaterialTheme.colorScheme.error)
+                        OutlinedButton(onClick = viewModel::refresh, enabled = !state.loading) {
+                            Text("Thử kết nối lại")
+                        }
+                    }
+                }
+            }
             if (state.loading) CircularProgressIndicator()
             when (selectedSection) {
                 ViewerSection.LIVE -> LiveScreen(state, viewModel::selectCamera)
@@ -108,7 +121,7 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
                 )
                 ViewerSection.STORAGE -> StorageScreen(
                     state = state,
-                    onAdd = viewModel::addDrive,
+                    onAdd = viewModel::authorizeDrive,
                     onRefresh = viewModel::refreshDrive,
                     onActivate = viewModel::activateDrive,
                     onDelete = viewModel::deleteDrive
@@ -236,7 +249,7 @@ private fun formatDuration(value: Long?): String {
 @Composable
 private fun StorageScreen(
     state: ViewerUiState,
-    onAdd: (GoogleDriveMutation) -> Unit,
+    onAdd: (String, String) -> Unit,
     onRefresh: (String) -> Unit,
     onActivate: (String) -> Unit,
     onDelete: (String) -> Unit
@@ -297,7 +310,7 @@ private fun StorageScreen(
         AddDriveDialog(
             onDismiss = { showAddDialog = false },
             onSave = {
-                onAdd(it)
+                onAdd(it.first, it.second)
                 showAddDialog = false
             }
         )
@@ -314,16 +327,15 @@ private fun formatRetention(seconds: Long): String {
 }
 
 @Composable
-private fun AddDriveDialog(onDismiss: () -> Unit, onSave: (GoogleDriveMutation) -> Unit) {
+private fun AddDriveDialog(onDismiss: () -> Unit, onSave: (Pair<String, String>) -> Unit) {
     var id by remember { mutableStateOf("drive01") }
     var displayName by remember { mutableStateOf("Google Drive 01") }
-    var oauthToken by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Thêm Google Drive") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Dán JSON token được tạo bởi rclone authorize. Token chỉ được chuyển tới Gateway sau khi bấm Lưu.")
+                Text("Viewer sẽ mở trang đăng nhập Google. Token được nhận và lưu trực tiếp tại Gateway, không hiển thị trong Viewer.")
                 OutlinedTextField(
                     id,
                     { id = it.lowercase().filter { char -> char.isLetterOrDigit() || char == '_' || char == '-' } },
@@ -338,21 +350,13 @@ private fun AddDriveDialog(onDismiss: () -> Unit, onSave: (GoogleDriveMutation) 
                     label = { Text("Tên hiển thị") },
                     singleLine = true
                 )
-                OutlinedTextField(
-                    oauthToken,
-                    { oauthToken = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("OAuth token JSON") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    minLines = 3
-                )
             }
         },
         confirmButton = {
             Button(
-                enabled = id.isNotBlank() && oauthToken.isNotBlank(),
-                onClick = { onSave(GoogleDriveMutation(id.trim(), displayName.trim(), oauthToken.trim())) }
-            ) { Text("Lưu") }
+                enabled = id.isNotBlank() && displayName.isNotBlank(),
+                onClick = { onSave(id.trim() to displayName.trim()) }
+            ) { Text("Đăng nhập Google") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
     )
@@ -368,6 +372,10 @@ private fun formatBytes(value: Long?): String {
 private fun LiveScreen(state: ViewerUiState, onSelect: (String) -> Unit) {
     if (state.config.validate().isFailure) {
         Placeholder("Mở Cài đặt để nhập IP Gateway và API token.")
+        return
+    }
+    if (state.gatewayConnectionError != null || state.gatewayStatus == null) {
+        Placeholder("Không kết nối được Gateway. App vẫn hoạt động; hãy kiểm tra Wi‑Fi/Tailscale rồi bấm Thử kết nối lại.")
         return
     }
     if (state.cameras.isEmpty()) {

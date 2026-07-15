@@ -64,6 +64,21 @@ data class GoogleDriveMutation(
     val oauthToken: String
 )
 
+data class DriveOAuthSession(
+    val sessionId: String,
+    val remoteId: String,
+    val displayName: String,
+    val status: String,
+    val authorizationUrl: String?,
+    val error: String?
+)
+
+data class OAuthProxyResponse(
+    val status: Int,
+    val headers: Map<String, String>,
+    val body: ByteArray
+)
+
 data class StorageSummary(
     val driveCount: Int,
     val onlineDriveCount: Int,

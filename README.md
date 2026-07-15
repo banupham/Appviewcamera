@@ -32,12 +32,14 @@ Mã nguồn nằm tại `termux-gateway/` và hiện cung cấp:
 - SQLite lưu camera tìm thấy, không quét lại toàn mạng để đọc danh sách.
 - Tự sinh cấu hình MediaMTX và relay RTSP không transcoding.
 - Quản lý nhiều Google Drive, upload/retry/xác minh bằng rclone và không trả OAuth token về Viewer.
+- Đăng nhập Google trực tiếp từ Viewer; Gateway tự chạy phiên OAuth và lưu token, không cần mở Termux.
 - Ghi segment fMP4 không transcoding, lập chỉ mục SQLite và phục vụ playback có Bearer token/HTTP Range.
 - Giám sát MediaMTX, retry 5, 10, 30 rồi 60 giây.
 - Script cài đặt, start/stop/status/doctor và Termux:Boot.
 - Tự phát hiện sự kiện chuyển động Hikvision ISAPI, bảo vệ clip liên quan và không giải mã video liên tục.
 - Ước tính bitrate, dung lượng mỗi ngày và thời gian lưu còn lại từ dữ liệu thật.
 - Log rotation, Termux:Boot, watchdog MediaMTX và phục hồi upload sau khi mất mạng/reboot.
+- Viewer hiển thị trạng thái Gateway ngoại tuyến và cho phép thử lại, không thoát ứng dụng.
 
 Hướng dẫn cài và thử trên điện thoại: [termux-gateway/README.md](termux-gateway/README.md).
 

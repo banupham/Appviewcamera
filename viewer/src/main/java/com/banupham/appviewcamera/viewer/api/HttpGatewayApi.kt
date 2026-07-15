@@ -60,6 +60,28 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         return GatewayJsonParser.drives("[${request("POST", "/api/storage/drives", body)}]").single()
     }
 
+    override suspend fun startDriveOAuth(remoteId: String, displayName: String): DriveOAuthSession {
+        val body = JSONObject().apply {
+            put("id", remoteId)
+            put("display_name", displayName)
+        }.toString()
+        return GatewayJsonParser.driveOAuthSession(
+            request("POST", "/api/storage/drives/oauth/start", body, STORAGE_TIMEOUT_MS)
+        )
+    }
+
+    override suspend fun driveOAuthStatus(sessionId: String): DriveOAuthSession =
+        GatewayJsonParser.driveOAuthSession(
+            request("GET", "/api/storage/drives/oauth/${encode(sessionId)}")
+        )
+
+    override suspend fun forwardDriveOAuthCallback(sessionId: String, path: String): OAuthProxyResponse {
+        val body = JSONObject().put("path", path).toString()
+        return GatewayJsonParser.oauthProxyResponse(
+            request("POST", "/api/storage/drives/oauth/${encode(sessionId)}/callback", body, STORAGE_TIMEOUT_MS)
+        )
+    }
+
     override suspend fun refreshDrive(driveId: String): GoogleDriveAccount =
         GatewayJsonParser.drives(
             "[${request("POST", "/api/storage/drives/${encode(driveId)}/refresh", readTimeoutMs = STORAGE_TIMEOUT_MS)}]"

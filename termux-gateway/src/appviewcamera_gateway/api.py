@@ -21,6 +21,7 @@ from .mediamtx import MediaMtxSupervisor
 from .storage import GoogleDriveStore
 from .recording import RecordingManager, RecordingWorker
 from .motion import MotionMonitor
+from .drive_oauth import DriveOAuthManager
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
@@ -39,6 +40,7 @@ class GatewayRuntime:
         self.database = GatewayDatabase(settings.database_path)
         self.mediamtx = MediaMtxSupervisor(settings, self.camera_store)
         self.drive_store = GoogleDriveStore(settings.home)
+        self.drive_oauth = DriveOAuthManager(self.drive_store)
         self.recording = RecordingManager(settings, self.database)
         self.recording_worker = RecordingWorker(
             self.recording, self.database, self.drive_store, self.camera_store.list
@@ -58,6 +60,7 @@ class GatewayRuntime:
             self.discovery_task = asyncio.create_task(self._periodic_discovery(), name="camera-discovery")
 
     async def stop(self) -> None:
+        self.drive_oauth.stop()
         await self.motion_monitor.stop()
         await self.recording_worker.stop()
         if self.discovery_task:
@@ -122,6 +125,21 @@ class GatewayRouter:
                 return 200, self.runtime.camera_store.list()
             if method == "GET" and path == "/api/storage/drives":
                 return 200, self.runtime.drive_store.list()
+            if method == "POST" and path == "/api/storage/drives/oauth/start":
+                request = json.loads(body.decode("utf-8"))
+                return 201, self.runtime.drive_oauth.start(
+                    str(request.get("id", "")), str(request.get("display_name", ""))
+                )
+            if path.startswith("/api/storage/drives/oauth/"):
+                suffix = path.removeprefix("/api/storage/drives/oauth/")
+                if suffix.endswith("/callback") and method == "POST":
+                    session_id = unquote(suffix.removesuffix("/callback"))
+                    request = json.loads(body.decode("utf-8"))
+                    return 200, self.runtime.drive_oauth.proxy_callback(
+                        session_id, str(request.get("path", ""))
+                    )
+                if method == "GET":
+                    return 200, self.runtime.drive_oauth.get(unquote(suffix))
             if method == "GET" and path == "/api/storage/summary":
                 return 200, self.runtime.drive_store.summary(
                     self.runtime.database.recording_statistics()

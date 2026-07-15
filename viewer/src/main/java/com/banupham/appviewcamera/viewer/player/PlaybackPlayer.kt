@@ -47,15 +47,19 @@ fun PlaybackPlayer(url: String, apiToken: String, modifier: Modifier = Modifier)
                 if (playbackState == Player.STATE_READY) error = null
             }
         }
-        val dataSource = DefaultHttpDataSource.Factory().setDefaultRequestProperties(
-            mapOf("Authorization" to "Bearer $apiToken")
-        )
-        val source = ProgressiveMediaSource.Factory(dataSource)
-            .createMediaSource(MediaItem.fromUri(url))
         player.addListener(listener)
-        player.setMediaSource(source)
-        player.prepare()
-        player.playWhenReady = true
+        runCatching {
+            val dataSource = DefaultHttpDataSource.Factory().setDefaultRequestProperties(
+                mapOf("Authorization" to "Bearer $apiToken")
+            )
+            val source = ProgressiveMediaSource.Factory(dataSource)
+                .createMediaSource(MediaItem.fromUri(url))
+            player.setMediaSource(source)
+            player.prepare()
+            player.playWhenReady = true
+        }.onFailure { failure ->
+            error = "Không thể khởi tạo phát clip: ${failure.message ?: "URL không hợp lệ"}"
+        }
         onDispose {
             player.removeListener(listener)
             player.release()
