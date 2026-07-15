@@ -24,7 +24,7 @@ if [ "$SOURCE_DIR" != "$APP_HOME" ]; then
   cp -R "$SOURCE_DIR/src/." "$APP_HOME/src/"
   cp -R "$SOURCE_DIR/scripts/." "$APP_HOME/scripts/"
   cp "$SOURCE_DIR/README.md" "$APP_HOME/README.md"
-  for config in gateway.json cameras.json recording.json google-drives.json; do
+  for config in gateway.json cameras.json recording.json google-drives.json youtube.json; do
     if [ ! -f "$APP_HOME/config/$config" ]; then
       cp "$SOURCE_DIR/config/$config" "$APP_HOME/config/$config"
     fi

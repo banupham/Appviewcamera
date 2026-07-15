@@ -72,7 +72,7 @@ class PlaybackIndex:
             },
             {
                 "type": "YOUTUBE_READY",
-                "state": "READY" if youtube_ready else str(row.get("youtube_state") or "NOT_CONFIGURED"),
+                "state": "READY" if youtube_ready else self._youtube_status(row),
                 "video_id": item["youtube_video_id"],
                 "start_offset_seconds": item["youtube_start_offset_seconds"],
                 "watch_url": self.youtube_watch_url(row) if youtube_ready else None,
@@ -98,17 +98,17 @@ class PlaybackIndex:
             and int(row.get("remote_size_bytes") or -1) == int(row.get("size_bytes") or 0)
         )
         youtube_ready = (
-            row.get("youtube_state") == "YOUTUBE_READY"
+            self._youtube_status(row) == "YOUTUBE_READY"
             and bool(row.get("youtube_video_id"))
         )
         preferred = "LOCAL_CACHE" if local_ready else "DRIVE_READY" if drive_ready else "YOUTUBE_READY" if youtube_ready else None
         if preferred:
             status = "READY"
-        elif row.get("youtube_state") in {"PENDING", "PROCESSING"} or row.get("clip_state") in {
+        elif self._youtube_status(row) in {"PENDING", "PROCESSING", "YOUTUBE_PENDING", "YOUTUBE_BATCHING", "YOUTUBE_UPLOADING", "YOUTUBE_PROCESSING", "YOUTUBE_RETRY"} or row.get("clip_state") in {
             "LOCAL_PENDING", "DRIVE_UPLOADING", "UPLOAD_RETRY"
         }:
             status = "PROCESSING"
-        elif row.get("clip_state") == "FAILED" or row.get("youtube_state") == "FAILED":
+        elif row.get("clip_state") == "FAILED" or self._youtube_status(row) in {"FAILED", "YOUTUBE_FAILED"}:
             status = "FAILED"
         else:
             status = "UNAVAILABLE"
@@ -136,6 +136,10 @@ class PlaybackIndex:
         video_id = quote(str(row.get("youtube_video_id") or ""), safe="")
         offset = max(0, int(row.get("youtube_start_offset_seconds") or 0))
         return f"https://www.youtube.com/watch?v={video_id}&t={offset}s"
+
+    @staticmethod
+    def _youtube_status(row: dict) -> str:
+        return str(row.get("youtube_status") or row.get("youtube_state") or "NOT_CONFIGURED")
 
     @staticmethod
     def _stream_url(item_id: str, source: str) -> str:

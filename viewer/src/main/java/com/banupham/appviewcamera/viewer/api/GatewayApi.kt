@@ -16,6 +16,14 @@ interface GatewayApi {
     suspend fun refreshDrive(driveId: String): GoogleDriveAccount
     suspend fun activateDrive(driveId: String): GoogleDriveAccount
     suspend fun deleteDrive(driveId: String)
+    suspend fun youtubeAccounts(): List<YouTubeAccount>
+    suspend fun youtubeStatus(): YouTubeArchiveStatus
+    suspend fun configureYouTube(clientId: String, clientSecret: String, targetDurationMinutes: Int): YouTubeArchiveStatus
+    suspend fun startYouTubeOAuth(accountId: String, displayName: String): YouTubeOAuthSession
+    suspend fun reconnectYouTube(accountId: String): YouTubeOAuthSession
+    suspend fun youtubeOAuthStatus(sessionId: String): YouTubeOAuthSession
+    suspend fun forwardYouTubeOAuthCallback(sessionId: String, path: String): OAuthProxyResponse
+    suspend fun deleteYouTubeAccount(accountId: String)
     suspend fun recordingStatus(): RecordingStatus
     suspend fun updateRecording(enabled: Boolean, localRetentionMinutes: Int): RecordingStatus
     suspend fun recordings(cameraId: String? = null, fromMs: Long? = null, toMs: Long? = null): List<RecordingClip>

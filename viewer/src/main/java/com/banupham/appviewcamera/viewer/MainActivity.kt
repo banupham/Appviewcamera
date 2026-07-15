@@ -164,7 +164,10 @@ private fun ViewerScreen(
                     onAdd = viewModel::authorizeDrive,
                     onRefresh = viewModel::refreshDrive,
                     onActivate = viewModel::activateDrive,
-                    onDelete = viewModel::deleteDrive
+                    onDelete = viewModel::deleteDrive,
+                    onAddYouTube = viewModel::authorizeYouTube,
+                    onReconnectYouTube = viewModel::reconnectYouTube,
+                    onDeleteYouTube = viewModel::deleteYouTubeAccount
                 )
                 ViewerSection.SETTINGS -> SettingsScreen(
                     state,
@@ -364,9 +367,13 @@ private fun StorageScreen(
     onAdd: (String, String) -> Unit,
     onRefresh: (String) -> Unit,
     onActivate: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onAddYouTube: (String, String, String, String, Int) -> Unit,
+    onReconnectYouTube: (String) -> Unit,
+    onDeleteYouTube: (String) -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
+    var showAddYouTubeDialog by remember { mutableStateOf(false) }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         state.storageSummary?.let { summary ->
             item {
@@ -417,6 +424,39 @@ private fun StorageScreen(
                 }
             }
         }
+        item {
+            Text("YouTube Private", style = MaterialTheme.typography.titleLarge)
+        }
+        state.youtubeStatus?.let { youtube ->
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(if (youtube.enabled) "Lưu nền đang bật" else "Lưu nền chưa bật trên Gateway")
+                        Text("Batch ${youtube.targetDurationMinutes} phút • ước tính ${youtube.estimatedUploadsPerDay}/${youtube.maxTargetUploadsPerDay} video/ngày")
+                        youtube.warning?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        youtube.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
+        }
+        item {
+            Text("Google Drive vẫn là kho chính. YouTube chỉ nhận các batch đã DRIVE_READY; token chỉ lưu trên Gateway.")
+        }
+        item { Button(onClick = { showAddYouTubeDialog = true }) { Text("Thêm YouTube Private") } }
+        if (state.youtubeAccounts.isEmpty()) item { Text("Chưa có tài khoản YouTube.") }
+        items(state.youtubeAccounts, key = { "youtube-${it.id}" }) { account ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(account.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text("${account.id} • ${account.status}")
+                    account.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onReconnectYouTube(account.id) }) { Text("Kết nối lại") }
+                        TextButton(onClick = { onDeleteYouTube(account.id) }) { Text("Xóa") }
+                    }
+                }
+            }
+        }
     }
     if (showAddDialog) {
         AddDriveDialog(
@@ -427,6 +467,77 @@ private fun StorageScreen(
             }
         )
     }
+    if (showAddYouTubeDialog) {
+        AddYouTubeDialog(
+            onDismiss = { showAddYouTubeDialog = false },
+            oauthConfigured = state.youtubeStatus?.oauthConfigured == true,
+            onSave = { id, name, clientId, clientSecret, targetMinutes ->
+                onAddYouTube(id, name, clientId, clientSecret, targetMinutes)
+                showAddYouTubeDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddYouTubeDialog(
+    oauthConfigured: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String, Int) -> Unit
+) {
+    var id by remember { mutableStateOf("youtube01") }
+    var displayName by remember { mutableStateOf("YouTube Private 01") }
+    var clientId by remember { mutableStateOf("") }
+    var clientSecret by remember { mutableStateOf("") }
+    var targetMinutes by remember { mutableStateOf(60) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Thêm YouTube Private") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Viewer mở trang Google với quyền tối thiểu để upload YouTube. Viewer không nhận hoặc lưu token.")
+                OutlinedTextField(
+                    id,
+                    { id = it.lowercase().filter { char -> char.isLetterOrDigit() || char == '_' || char == '-' } },
+                    modifier = Modifier.fillMaxWidth(), label = { Text("Mã tài khoản") }, singleLine = true
+                )
+                OutlinedTextField(
+                    displayName, { displayName = it }, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Tên hiển thị") }, singleLine = true
+                )
+                if (!oauthConfigured) {
+                    Text("Nhập OAuth Desktop client một lần. Dữ liệu được gửi thẳng tới Gateway và không lưu trên Viewer.")
+                    OutlinedTextField(
+                        clientId, { clientId = it.trim() }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text("OAuth client ID") }, singleLine = true
+                    )
+                    OutlinedTextField(
+                        clientSecret, { clientSecret = it.trim() }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text("OAuth client secret") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                }
+                Text("Độ dài batch mong muốn")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(15, 30, 60, 120).forEach { minutes ->
+                        FilterChip(
+                            selected = targetMinutes == minutes,
+                            onClick = { targetMinutes = minutes },
+                            label = { Text("$minutes") }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = id.isNotBlank() && displayName.isNotBlank() &&
+                    (oauthConfigured || (clientId.isNotBlank() && clientSecret.isNotBlank())),
+                onClick = { onSave(id.trim(), displayName.trim(), clientId, clientSecret, targetMinutes) }
+            ) { Text("Đăng nhập Google") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+    )
 }
 
 private fun formatBitrate(value: Long): String =

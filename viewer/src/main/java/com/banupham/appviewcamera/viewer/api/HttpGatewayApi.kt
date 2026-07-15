@@ -93,6 +93,55 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         request("DELETE", "/api/storage/drives/${encode(driveId)}")
     }
 
+    override suspend fun youtubeAccounts(): List<YouTubeAccount> =
+        GatewayJsonParser.youtubeAccounts(request("GET", "/api/youtube/accounts"))
+
+    override suspend fun youtubeStatus(): YouTubeArchiveStatus =
+        GatewayJsonParser.youtubeStatus(request("GET", "/api/youtube/status"))
+
+    override suspend fun configureYouTube(
+        clientId: String,
+        clientSecret: String,
+        targetDurationMinutes: Int
+    ): YouTubeArchiveStatus {
+        val body = JSONObject()
+            .put("client_id", clientId)
+            .put("client_secret", clientSecret)
+            .put("target_duration_minutes", targetDurationMinutes)
+            .toString()
+        return GatewayJsonParser.youtubeStatus(
+            request("PUT", "/api/youtube/config", body, STORAGE_TIMEOUT_MS)
+        )
+    }
+
+    override suspend fun startYouTubeOAuth(accountId: String, displayName: String): YouTubeOAuthSession {
+        val body = JSONObject().put("id", accountId).put("display_name", displayName).toString()
+        return GatewayJsonParser.youtubeOAuthSession(
+            request("POST", "/api/youtube/accounts/oauth/start", body, STORAGE_TIMEOUT_MS)
+        )
+    }
+
+    override suspend fun reconnectYouTube(accountId: String): YouTubeOAuthSession =
+        GatewayJsonParser.youtubeOAuthSession(
+            request("POST", "/api/youtube/accounts/${encode(accountId)}/reconnect", readTimeoutMs = STORAGE_TIMEOUT_MS)
+        )
+
+    override suspend fun youtubeOAuthStatus(sessionId: String): YouTubeOAuthSession =
+        GatewayJsonParser.youtubeOAuthSession(
+            request("GET", "/api/youtube/accounts/oauth/${encode(sessionId)}")
+        )
+
+    override suspend fun forwardYouTubeOAuthCallback(sessionId: String, path: String): OAuthProxyResponse {
+        val body = JSONObject().put("path", path).toString()
+        return GatewayJsonParser.oauthProxyResponse(
+            request("POST", "/api/youtube/accounts/oauth/${encode(sessionId)}/callback", body, STORAGE_TIMEOUT_MS)
+        )
+    }
+
+    override suspend fun deleteYouTubeAccount(accountId: String) {
+        request("DELETE", "/api/youtube/accounts/${encode(accountId)}")
+    }
+
     override suspend fun activateDrive(driveId: String): GoogleDriveAccount =
         GatewayJsonParser.drives(
             "[${request("POST", "/api/storage/drives/${encode(driveId)}/activate")}]"

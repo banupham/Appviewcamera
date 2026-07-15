@@ -14,6 +14,8 @@ import com.banupham.appviewcamera.viewer.api.RecordingStatus
 import com.banupham.appviewcamera.viewer.api.StorageSummary
 import com.banupham.appviewcamera.viewer.api.PlaybackDay
 import com.banupham.appviewcamera.viewer.api.PlaybackItem
+import com.banupham.appviewcamera.viewer.api.YouTubeAccount
+import com.banupham.appviewcamera.viewer.api.YouTubeArchiveStatus
 import com.banupham.appviewcamera.viewer.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.settings.GatewayCollection
@@ -41,6 +43,8 @@ data class ViewerUiState(
     val cameras: List<CameraSummary> = emptyList(),
     val candidates: List<DiscoveryCandidate> = emptyList(),
     val drives: List<GoogleDriveAccount> = emptyList(),
+    val youtubeAccounts: List<YouTubeAccount> = emptyList(),
+    val youtubeStatus: YouTubeArchiveStatus? = null,
     val storageSummary: StorageSummary? = null,
     val recordingStatus: RecordingStatus? = null,
     val playbackDays: List<PlaybackDay> = emptyList(),
@@ -219,7 +223,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     cameras = api.cameras(),
                     drives = api.drives(),
                     recordingStatus = api.recordingStatus(),
-                    storageSummary = api.storageSummary()
+                    storageSummary = api.storageSummary(),
+                    youtubeAccounts = runCatching { api.youtubeAccounts() }.getOrDefault(emptyList()),
+                    youtubeStatus = runCatching { api.youtubeStatus() }.getOrNull()
                 )
             }.onSuccess { payload ->
                 if (_state.value.currentGatewayId != gatewayId) return@onSuccess
@@ -240,6 +246,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         config = collection.current ?: current.config,
                         cameras = cameras,
                         drives = payload.drives,
+                        youtubeAccounts = payload.youtubeAccounts,
+                        youtubeStatus = payload.youtubeStatus,
                         storageSummary = payload.storageSummary,
                         recordingStatus = payload.recordingStatus,
                         selectedCameraId = selected,
@@ -339,6 +347,53 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         api.deleteDrive(driveId)
         _state.update { it.copy(drives = api.drives(), loading = false, message = "Đã xóa tài khoản Drive") }
     }
+
+    fun authorizeYouTube(
+        accountId: String,
+        displayName: String,
+        clientId: String,
+        clientSecret: String,
+        targetDurationMinutes: Int
+    ) =
+        launchApiAction("Đang chuẩn bị đăng nhập YouTube…") { api ->
+            api.configureYouTube(clientId, clientSecret, targetDurationMinutes)
+            YouTubeOAuthCoordinator(getApplication(), api).authorize(accountId, displayName)
+            _state.update {
+                it.copy(
+                    youtubeAccounts = api.youtubeAccounts(),
+                    youtubeStatus = api.youtubeStatus(),
+                    loading = false,
+                    message = "Đã kết nối YouTube Private"
+                )
+            }
+        }
+
+    fun reconnectYouTube(accountId: String) =
+        launchApiAction("Đang kết nối lại YouTube…") { api ->
+            YouTubeOAuthCoordinator(getApplication(), api)
+                .authorize(accountId, accountId, reconnect = true)
+            _state.update {
+                it.copy(
+                    youtubeAccounts = api.youtubeAccounts(),
+                    youtubeStatus = api.youtubeStatus(),
+                    loading = false,
+                    message = "Đã kết nối lại YouTube"
+                )
+            }
+        }
+
+    fun deleteYouTubeAccount(accountId: String) =
+        launchApiAction("Đang xóa tài khoản YouTube…") { api ->
+            api.deleteYouTubeAccount(accountId)
+            _state.update {
+                it.copy(
+                    youtubeAccounts = api.youtubeAccounts(),
+                    youtubeStatus = api.youtubeStatus(),
+                    loading = false,
+                    message = "Đã xóa tài khoản YouTube khỏi Gateway"
+                )
+            }
+        }
 
     fun loadRecordings(cameraId: String? = _state.value.selectedCameraId) =
         launchApiAction("Đang đọc danh sách clip…") { api ->
@@ -536,7 +591,9 @@ private data class RefreshPayload(
     val cameras: List<CameraSummary>,
     val drives: List<GoogleDriveAccount>,
     val recordingStatus: RecordingStatus,
-    val storageSummary: StorageSummary
+    val storageSummary: StorageSummary,
+    val youtubeAccounts: List<YouTubeAccount>,
+    val youtubeStatus: YouTubeArchiveStatus?
 )
 
 internal fun ViewerUiState.activateGateway(
@@ -552,6 +609,8 @@ internal fun ViewerUiState.activateGateway(
     cameras = emptyList(),
     candidates = emptyList(),
     drives = emptyList(),
+    youtubeAccounts = emptyList(),
+    youtubeStatus = null,
     storageSummary = null,
     recordingStatus = null,
     playbackDays = emptyList(),

@@ -76,6 +76,7 @@ Các file người dùng được giữ khi chạy lại installer:
 - `config/cameras.json`: camera, relay path; không chứa password.
 - `config/recording.json`: ghi hình và retention.
 - `config/google-drives.json`: danh sách remote và chính sách; không chứa OAuth token.
+- `config/youtube.json`: OAuth client của dự án, batch 15/30/60/120 phút và ngưỡng tối đa 80 upload/ngày.
 - `config/secrets.env`: API token và password camera, quyền file `600`.
 - `config/rclone.conf`: do rclone tạo ở giai đoạn Google Drive, không trả về Viewer.
 
@@ -130,6 +131,9 @@ Viewer sẽ mở relay tại `rtsp://IP_TAILSCALE_GATEWAY:8554/camera01`.
 Trong tab `Lưu trữ`, chọn `Thêm Google Drive`, nhập mã/tên rồi bấm `Đăng nhập Google`. Viewer mở trình duyệt ngoài; Gateway chạy `rclone authorize` nền, nhận callback và lưu token thẳng vào `rclone.conf`. Token không được trả về hoặc lưu trong Viewer. Không cần chạy lệnh tạo token trong Termux cho từng tài khoản.
 
 ## Giới hạn hiện tại
+
+- YouTube Data API cần tạo một OAuth Desktop client; ID/secret được nhập một lần trong Viewer và lưu thẳng vào `config/youtube.json` trên Gateway.
+- Test tự động không upload/xóa video thật trên YouTube và không xóa file thật trên Google Drive.
 
 - Android có thể chặn multicast, vì vậy ONVIF có thể không thấy camera; quét TCP subnet vẫn chạy.
 - Binary MediaMTX Linux ARM64 phải được thử trên điện thoại đích. `doctor.sh` xác nhận file và

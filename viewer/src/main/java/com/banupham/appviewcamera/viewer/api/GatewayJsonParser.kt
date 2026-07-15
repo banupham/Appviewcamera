@@ -113,6 +113,50 @@ object GatewayJsonParser {
         )
     }
 
+    fun youtubeAccounts(payload: String): List<YouTubeAccount> {
+        val array = JSONArray(payload)
+        return buildList {
+            repeat(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                add(
+                    YouTubeAccount(
+                        id = item.getString("id"),
+                        displayName = item.optString("display_name").ifBlank { item.getString("id") },
+                        active = item.optBoolean("active", false),
+                        status = item.optString("status", "NOT_CHECKED"),
+                        lastError = item.optString("last_error").takeIf { it.isNotBlank() && it != "null" }
+                    )
+                )
+            }
+        }
+    }
+
+    fun youtubeOAuthSession(payload: String): YouTubeOAuthSession {
+        val root = JSONObject(payload)
+        return YouTubeOAuthSession(
+            sessionId = root.getString("session_id"),
+            accountId = root.getString("account_id"),
+            displayName = root.optString("display_name"),
+            status = root.optString("status", "ERROR"),
+            authorizationUrl = root.optString("authorization_url").takeIf { it.isNotBlank() && it != "null" },
+            error = root.optString("error").takeIf { it.isNotBlank() && it != "null" }
+        )
+    }
+
+    fun youtubeStatus(payload: String): YouTubeArchiveStatus {
+        val root = JSONObject(payload)
+        return YouTubeArchiveStatus(
+            enabled = root.optBoolean("enabled", false),
+            oauthConfigured = root.optBoolean("oauth_configured", false),
+            accountCount = root.optInt("account_count", 0),
+            targetDurationMinutes = root.optInt("target_duration_minutes", 60),
+            estimatedUploadsPerDay = root.optInt("estimated_uploads_per_day", 0),
+            maxTargetUploadsPerDay = root.optInt("max_target_uploads_per_day", 80),
+            warning = root.optString("warning").takeIf { it.isNotBlank() && it != "null" },
+            lastError = root.optString("last_error").takeIf { it.isNotBlank() && it != "null" }
+        )
+    }
+
     fun oauthProxyResponse(payload: String): OAuthProxyResponse {
         val root = JSONObject(payload)
         val headersObject = root.optJSONObject("headers") ?: JSONObject()

@@ -1,0 +1,13 @@
+{
+  "youtube": {
+    "enabled": true,
+    "client_id": "",
+    "client_secret": "",
+    "target_youtube_duration_minutes": 60,
+    "upload_limit_per_day": 100,
+    "max_target_uploads_per_day": 80,
+    "retry_seconds": [60, 300, 900, 3600, 21600],
+    "resumable_chunk_bytes": 8388608,
+    "batch_root": "youtube/batches"
+  }
+}

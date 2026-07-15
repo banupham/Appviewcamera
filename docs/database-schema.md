@@ -42,4 +42,12 @@ Database vận hành là `~/appviewcamera/data/camera_gateway.db`, bật WAL và
 - `motion_events`: sự kiện ISAPI đang chờ ghép với segment fMP4.
 - `deletion_history`: lịch sử clip bị retention xóa, gồm lý do, Drive, kích thước và thời điểm.
 
+- `youtube_accounts`: tài khoản và OAuth token YouTube chỉ tại Gateway; API chỉ trả metadata công khai.
+- `youtube_batches`: batch theo camera/ngày, tên, khoảng thời gian, file stream-copy và trạng thái.
+- `youtube_upload_jobs`: upload resumable duy nhất cho mỗi batch, session URL, byte đã gửi, retry và video ID.
+
+Migration Gateway 1.5.0 dùng `CREATE TABLE IF NOT EXISTS`, đồng thời thêm `youtube_status`, `youtube_batch_id`,
+end offset, upload time và processing status vào `recording_clips`. Record cũ không bị xóa; `youtube_state`
+cũ được đồng bộ sang `youtube_status` khi cần.
+
 Index chính: `(camera_id, started_at_ms DESC)`, `relative_path UNIQUE`, và `(processed, detected_at_ms)` cho motion. Viewer luôn tìm clip theo SQLite; không quét Google Drive khi chọn ngày.

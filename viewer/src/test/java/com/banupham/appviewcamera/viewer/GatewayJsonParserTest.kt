@@ -6,6 +6,21 @@ import org.junit.Test
 
 class GatewayJsonParserTest {
     @Test
+    fun parsesYouTubeArchiveWithoutOAuthTokens() {
+        val accounts = GatewayJsonParser.youtubeAccounts(
+            """[{"id":"youtube01","display_name":"Private 01","active":true,"status":"ONLINE","last_error":null}]"""
+        )
+        val status = GatewayJsonParser.youtubeStatus(
+            """{"enabled":true,"account_count":1,"target_duration_minutes":90,"estimated_uploads_per_day":64,"max_target_uploads_per_day":80,"warning":"auto adjusted","last_error":null}"""
+        )
+
+        assertEquals("youtube01", accounts.single().id)
+        assertEquals("ONLINE", accounts.single().status)
+        assertEquals(90, status.targetDurationMinutes)
+        assertEquals(64, status.estimatedUploadsPerDay)
+        assertEquals("auto adjusted", status.warning)
+    }
+    @Test
     fun parsesCameraConfigurationWithoutCredentials() {
         val cameras = GatewayJsonParser.cameras(
             """[{"id":"camera01","name":"Cửa trước","host":"192.168.1.7","port":554,"username":"admin","main_path":"Streaming/Channels/101","sub_path":"Streaming/Channels/102","relay_path":"camera01","enabled":true,"record_enabled":true,"motion_enabled":false}]"""

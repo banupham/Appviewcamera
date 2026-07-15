@@ -75,6 +75,34 @@ data class DriveOAuthSession(
     val error: String?
 )
 
+data class YouTubeAccount(
+    val id: String,
+    val displayName: String,
+    val active: Boolean,
+    val status: String,
+    val lastError: String?
+)
+
+data class YouTubeOAuthSession(
+    val sessionId: String,
+    val accountId: String,
+    val displayName: String,
+    val status: String,
+    val authorizationUrl: String?,
+    val error: String?
+)
+
+data class YouTubeArchiveStatus(
+    val enabled: Boolean,
+    val oauthConfigured: Boolean,
+    val accountCount: Int,
+    val targetDurationMinutes: Int,
+    val estimatedUploadsPerDay: Int,
+    val maxTargetUploadsPerDay: Int,
+    val warning: String?,
+    val lastError: String?
+)
+
 data class OAuthProxyResponse(
     val status: Int,
     val headers: Map<String, String>,

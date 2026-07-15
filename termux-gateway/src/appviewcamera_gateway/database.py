@@ -38,8 +38,13 @@ CREATE TABLE IF NOT EXISTS recording_clips (
     remote_size_bytes INTEGER,
     remote_verified_at_ms INTEGER,
     youtube_state TEXT NOT NULL DEFAULT 'NOT_CONFIGURED',
+    youtube_status TEXT NOT NULL DEFAULT 'NOT_CONFIGURED',
     youtube_video_id TEXT,
+    youtube_batch_id TEXT,
     youtube_start_offset_seconds INTEGER NOT NULL DEFAULT 0,
+    youtube_end_offset_seconds INTEGER NOT NULL DEFAULT 0,
+    youtube_uploaded_at INTEGER,
+    youtube_processing_status TEXT,
     youtube_updated_at_ms INTEGER,
     youtube_last_error TEXT,
     upload_attempts INTEGER NOT NULL DEFAULT 0,
@@ -72,6 +77,55 @@ CREATE TABLE IF NOT EXISTS deletion_history (
     size_bytes INTEGER NOT NULL,
     deleted_at_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS youtube_accounts (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    token_json TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'NOT_CHECKED',
+    last_error TEXT,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS youtube_batches (
+    id TEXT PRIMARY KEY,
+    camera_id TEXT NOT NULL,
+    local_day TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    start_time_ms INTEGER NOT NULL,
+    end_time_ms INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    target_duration_minutes INTEGER NOT NULL,
+    local_path TEXT,
+    state TEXT NOT NULL DEFAULT 'YOUTUBE_PENDING',
+    account_id TEXT,
+    youtube_video_id TEXT,
+    last_error TEXT,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_youtube_batches_state
+ON youtube_batches(state, start_time_ms);
+CREATE TABLE IF NOT EXISTS youtube_upload_jobs (
+    id TEXT PRIMARY KEY,
+    batch_id TEXT NOT NULL UNIQUE,
+    account_id TEXT,
+    state TEXT NOT NULL DEFAULT 'YOUTUBE_PENDING',
+    upload_url TEXT,
+    uploaded_bytes INTEGER NOT NULL DEFAULT 0,
+    total_bytes INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_retry_ms INTEGER NOT NULL DEFAULT 0,
+    youtube_video_id TEXT,
+    last_error TEXT,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    FOREIGN KEY(batch_id) REFERENCES youtube_batches(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_youtube_jobs_retry
+ON youtube_upload_jobs(state, next_retry_ms, created_at_ms);
 """
 
 
@@ -112,8 +166,13 @@ class GatewayDatabase:
             "remote_size_bytes": "INTEGER",
             "remote_verified_at_ms": "INTEGER",
             "youtube_state": "TEXT NOT NULL DEFAULT 'NOT_CONFIGURED'",
+            "youtube_status": "TEXT NOT NULL DEFAULT 'NOT_CONFIGURED'",
             "youtube_video_id": "TEXT",
+            "youtube_batch_id": "TEXT",
             "youtube_start_offset_seconds": "INTEGER NOT NULL DEFAULT 0",
+            "youtube_end_offset_seconds": "INTEGER NOT NULL DEFAULT 0",
+            "youtube_uploaded_at": "INTEGER",
+            "youtube_processing_status": "TEXT",
             "youtube_updated_at_ms": "INTEGER",
             "youtube_last_error": "TEXT",
             "upload_attempts": "INTEGER NOT NULL DEFAULT 0",
@@ -167,6 +226,14 @@ class GatewayDatabase:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_recording_camera_day "
             "ON recording_clips(camera_id, started_at_ms, clip_state)"
+        )
+        connection.execute(
+            "UPDATE recording_clips SET youtube_status=youtube_state "
+            "WHERE youtube_status='NOT_CONFIGURED' AND youtube_state!='NOT_CONFIGURED'"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_recording_youtube_batch "
+            "ON recording_clips(youtube_batch_id, youtube_status, camera_id, started_at_ms)"
         )
 
     def connect(self) -> sqlite3.Connection:
@@ -363,10 +430,11 @@ class GatewayDatabase:
             raise ValueError("youtube_video_id is required for YOUTUBE_READY")
         with self._lock, self.connect() as connection:
             connection.execute(
-                "UPDATE recording_clips SET youtube_state=?, youtube_video_id=?, "
+                "UPDATE recording_clips SET youtube_state=?, youtube_status=?, youtube_video_id=?, "
                 "youtube_start_offset_seconds=?, youtube_updated_at_ms=?, youtube_last_error=? "
                 "WHERE id=?",
                 (
+                    normalized,
                     normalized,
                     (video_id or "").strip() or None,
                     max(0, int(start_offset_seconds)),

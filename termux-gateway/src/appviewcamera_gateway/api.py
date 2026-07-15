@@ -23,6 +23,13 @@ from .recording import RecordingManager, RecordingWorker
 from .motion import MotionMonitor
 from .drive_oauth import DriveOAuthManager
 from .playback import PlaybackIndex
+from .youtube.account import YouTubeAccountStore
+from .youtube.batch import YouTubeBatchBuilder
+from .youtube.index import YouTubeRepository
+from .youtube.oauth import YouTubeOAuthManager
+from .youtube.processing import YouTubeProcessingMonitor
+from .youtube.uploader import YouTubeResumableUploader
+from .youtube.worker import YouTubeArchiveWorker
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
@@ -47,6 +54,26 @@ class GatewayRuntime:
         self.recording_worker = RecordingWorker(
             self.recording, self.database, self.drive_store, self.camera_store.list
         )
+        self.youtube_repository = YouTubeRepository(self.database)
+        self.youtube_accounts = YouTubeAccountStore(settings.home, self.youtube_repository)
+        self.youtube_oauth = YouTubeOAuthManager(
+            self.youtube_accounts, self.youtube_repository
+        )
+        self.youtube_batch = YouTubeBatchBuilder(
+            self.youtube_repository,
+            self.recording,
+            self.drive_store,
+            settings.gateway_id,
+            self.youtube_accounts.config,
+            self.camera_store.list,
+        )
+        self.youtube_worker = YouTubeArchiveWorker(
+            self.youtube_repository,
+            self.youtube_accounts,
+            self.youtube_batch,
+            YouTubeResumableUploader(self.youtube_repository, self.youtube_accounts),
+            YouTubeProcessingMonitor(self.youtube_repository, self.youtube_accounts),
+        )
         self.motion_monitor = MotionMonitor(
             settings, self.database, self.camera_store.list
         )
@@ -57,12 +84,14 @@ class GatewayRuntime:
     async def start(self) -> None:
         await self.mediamtx.start()
         self.recording_worker.start()
+        self.youtube_worker.start()
         self.motion_monitor.start()
         if self.settings.discovery_enabled:
             self.discovery_task = asyncio.create_task(self._periodic_discovery(), name="camera-discovery")
 
     async def stop(self) -> None:
         self.drive_oauth.stop()
+        await self.youtube_worker.stop()
         await self.motion_monitor.stop()
         await self.recording_worker.stop()
         if self.discovery_task:
@@ -152,6 +181,47 @@ class GatewayRouter:
                 return 200, self.runtime.drive_store.summary(
                     self.runtime.database.recording_statistics()
                 )
+            if method == "GET" and path == "/api/youtube/accounts":
+                return 200, self.runtime.youtube_accounts.list()
+            if method == "POST" and path == "/api/youtube/accounts/oauth/start":
+                request = json.loads(body.decode("utf-8"))
+                return 201, self.runtime.youtube_oauth.start(
+                    str(request.get("id", "")), str(request.get("display_name", ""))
+                )
+            if path.startswith("/api/youtube/accounts/oauth/"):
+                suffix = path.removeprefix("/api/youtube/accounts/oauth/")
+                if suffix.endswith("/callback") and method == "POST":
+                    session_id = unquote(suffix.removesuffix("/callback"))
+                    request = json.loads(body.decode("utf-8"))
+                    return 200, self.runtime.youtube_oauth.callback(
+                        session_id, str(request.get("path", ""))
+                    )
+                if method == "GET":
+                    return 200, self.runtime.youtube_oauth.get(unquote(suffix))
+            if method == "GET" and path == "/api/youtube/status":
+                return 200, self.runtime.youtube_worker.status()
+            if method == "PUT" and path == "/api/youtube/config":
+                request = json.loads(body.decode("utf-8"))
+                self.runtime.youtube_accounts.configure(
+                    str(request.get("client_id", "")),
+                    str(request.get("client_secret", "")),
+                    int(request.get("target_duration_minutes", 60)),
+                )
+                return 200, self.runtime.youtube_worker.status()
+            if path.startswith("/api/youtube/accounts/"):
+                suffix = path.removeprefix("/api/youtube/accounts/")
+                if suffix.endswith("/reconnect") and method == "POST":
+                    account_id = unquote(suffix.removesuffix("/reconnect"))
+                    account = self.runtime.youtube_repository.public_account(account_id)
+                    if not account:
+                        return 404, {"detail": "YouTube account not found"}
+                    return 201, self.runtime.youtube_oauth.start(
+                        account_id, str(account["display_name"])
+                    )
+                if method == "DELETE":
+                    if not self.runtime.youtube_accounts.delete(unquote(suffix)):
+                        return 404, {"detail": "YouTube account not found"}
+                    return 200, {"deleted": True}
             if method == "POST" and path == "/api/storage/drives":
                 request = json.loads(body.decode("utf-8"))
                 return 201, self.runtime.drive_store.add(

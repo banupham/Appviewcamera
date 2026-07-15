@@ -1,6 +1,6 @@
 # AppViewCamera
 
-Phiên bản hiện tại: Viewer 1.3.0 / Gateway 1.4.0.
+Phiên bản hiện tại: Viewer 1.4.0 / Gateway 1.5.0.
 
 Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera chạy
 **Termux Gateway**, còn điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua
@@ -64,4 +64,5 @@ GitHub Actions.
 - [Lưu trữ Google Drive](docs/phase-9-google-drive.md)
 - [Ghi hình và xem lại](docs/phase-6-14-recording-playback.md)
 - [Database schema](docs/database-schema.md)
+- [YouTube Private archive](docs/phase-youtube-private.md)
 - [Roadmap](docs/roadmap.md)

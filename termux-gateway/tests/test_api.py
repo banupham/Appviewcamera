@@ -86,6 +86,35 @@ def test_drive_api_never_returns_oauth_token(gateway_home):
         loop.close()
 
 
+def test_youtube_oauth_configuration_and_accounts_never_return_secrets(gateway_home):
+    router, loop = make_router(gateway_home)
+    headers = "Bearer test-token"
+    try:
+        code, status = router.route(
+            "PUT", "/api/youtube/config", headers,
+            json.dumps({
+                "client_id": "desktop-client.apps.googleusercontent.com",
+                "client_secret": "private-client-secret",
+                "target_duration_minutes": 60,
+            }).encode(),
+        )
+        assert code == 200
+        assert status["oauth_configured"] is True
+        assert "private-client-secret" not in str(status)
+
+        router.runtime.youtube_repository.upsert_account(
+            "youtube01", "YouTube 01",
+            {"access_token": "access-secret", "refresh_token": "refresh-secret"},
+            "https://www.googleapis.com/auth/youtube.upload",
+        )
+        code, accounts = router.route("GET", "/api/youtube/accounts", headers)
+        assert code == 200
+        assert "access-secret" not in str(accounts)
+        assert "refresh-secret" not in str(accounts)
+    finally:
+        loop.close()
+
+
 def test_recording_can_be_enabled_through_api(gateway_home):
     router, loop = make_router(gateway_home)
     headers = "Bearer test-token"
