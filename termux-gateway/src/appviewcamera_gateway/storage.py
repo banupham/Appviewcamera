@@ -256,7 +256,7 @@ class GoogleDriveStore:
             "collecting_statistics": bitrate is None,
         }
 
-    def upload_file(self, remote_id: str, local_path: Path, remote_path: str) -> None:
+    def upload_file(self, remote_id: str, local_path: Path, remote_path: str) -> dict[str, Any]:
         normalized_id = self._require_remote(remote_id)
         safe_path = self._safe_remote_path(remote_path)
         completed = self._run_rclone(
@@ -269,6 +269,16 @@ class GoogleDriveStore:
         stat = self.remote_stat(normalized_id, safe_path)
         if int(stat.get("Size", -1)) != local_path.stat().st_size:
             raise RuntimeError("Kích thước file trên Google Drive không khớp bản cục bộ")
+
+        file_id = str(stat.get("ID") or "").strip()
+        if not file_id:
+            raise RuntimeError("Google Drive did not return a file ID after upload")
+        return {
+            "file_id": file_id,
+            "remote_path": safe_path,
+            "size_bytes": int(stat["Size"]),
+            "verified_at_ms": int(time.time() * 1000),
+        }
 
     def download_file(self, remote_id: str, remote_path: str, local_path: Path) -> None:
         normalized_id = self._require_remote(remote_id)

@@ -35,7 +35,9 @@ Index: unique `relayPath`, `enabled`, `createdAt`.
 Database vận hành là `~/appviewcamera/data/camera_gateway.db`, bật WAL và tự migrate khi cập nhật.
 
 - `discovery_candidates`: thiết bị/cổng tìm thấy trong LAN.
-- `recording_clips`: thời gian, kích thước, đường dẫn local, trạng thái upload/retry, Drive/path từ xa, motion và protection.
+- `recording_clips`: thời gian, kích thước, `clip_state`, staging/cache local, Drive remote/file ID,
+  kích thước và thời gian xác minh, motion và protection. Xem migration tại
+  [drive-primary-migration.md](drive-primary-migration.md).
 - `motion_events`: sự kiện ISAPI đang chờ ghép với segment fMP4.
 - `deletion_history`: lịch sử clip bị retention xóa, gồm lý do, Drive, kích thước và thời điểm.
 

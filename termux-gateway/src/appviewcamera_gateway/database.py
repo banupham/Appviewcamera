@@ -29,14 +29,21 @@ CREATE TABLE IF NOT EXISTS recording_clips (
     duration_ms INTEGER,
     size_bytes INTEGER NOT NULL,
     modified_ns INTEGER NOT NULL,
+    clip_state TEXT NOT NULL DEFAULT 'LOCAL_PENDING',
     local_state TEXT NOT NULL DEFAULT 'AVAILABLE',
     upload_state TEXT NOT NULL DEFAULT 'PENDING',
     remote_id TEXT,
     remote_path TEXT,
+    remote_file_id TEXT,
+    remote_size_bytes INTEGER,
+    remote_verified_at_ms INTEGER,
     upload_attempts INTEGER NOT NULL DEFAULT 0,
     next_retry_ms INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
     uploaded_at_ms INTEGER,
+    local_cached_at_ms INTEGER,
+    local_deleted_at_ms INTEGER,
+    state_updated_at_ms INTEGER NOT NULL DEFAULT 0,
     protected INTEGER NOT NULL DEFAULT 0,
     motion INTEGER NOT NULL DEFAULT 0
 );
@@ -89,15 +96,23 @@ class GatewayDatabase:
             str(row[1])
             for row in connection.execute("PRAGMA table_info(recording_clips)").fetchall()
         }
+        needs_state_migration = "clip_state" not in columns
         migrations = {
+            "clip_state": "TEXT NOT NULL DEFAULT 'LOCAL_PENDING'",
             "local_state": "TEXT NOT NULL DEFAULT 'AVAILABLE'",
             "upload_state": "TEXT NOT NULL DEFAULT 'PENDING'",
             "remote_id": "TEXT",
             "remote_path": "TEXT",
+            "remote_file_id": "TEXT",
+            "remote_size_bytes": "INTEGER",
+            "remote_verified_at_ms": "INTEGER",
             "upload_attempts": "INTEGER NOT NULL DEFAULT 0",
             "next_retry_ms": "INTEGER NOT NULL DEFAULT 0",
             "last_error": "TEXT",
             "uploaded_at_ms": "INTEGER",
+            "local_cached_at_ms": "INTEGER",
+            "local_deleted_at_ms": "INTEGER",
+            "state_updated_at_ms": "INTEGER NOT NULL DEFAULT 0",
             "protected": "INTEGER NOT NULL DEFAULT 0",
             "motion": "INTEGER NOT NULL DEFAULT 0",
         }
@@ -106,6 +121,39 @@ class GatewayDatabase:
                 connection.execute(
                     f"ALTER TABLE recording_clips ADD COLUMN {name} {declaration}"
                 )
+        if needs_state_migration:
+            connection.execute(
+                """
+                UPDATE recording_clips SET
+                    clip_state=CASE
+                        WHEN upload_state='UPLOADED' AND local_state='AVAILABLE' THEN 'LOCAL_CACHE'
+                        WHEN upload_state='UPLOADED' THEN 'DRIVE_READY'
+                        WHEN upload_state='UPLOADING' THEN 'DRIVE_UPLOADING'
+                        WHEN upload_state='FAILED' AND local_state='AVAILABLE' THEN 'UPLOAD_RETRY'
+                        WHEN local_state='AVAILABLE' THEN 'LOCAL_PENDING'
+                        ELSE 'FAILED'
+                    END,
+                    remote_file_id=CASE
+                        WHEN upload_state='UPLOADED' THEN 'legacy-path:' || remote_path
+                        ELSE NULL
+                    END,
+                    remote_size_bytes=CASE WHEN upload_state='UPLOADED' THEN size_bytes ELSE NULL END,
+                    remote_verified_at_ms=CASE
+                        WHEN upload_state='UPLOADED' THEN COALESCE(uploaded_at_ms, started_at_ms)
+                        ELSE NULL
+                    END,
+                    local_cached_at_ms=CASE
+                        WHEN upload_state='UPLOADED' AND local_state='AVAILABLE'
+                            THEN COALESCE(uploaded_at_ms, started_at_ms)
+                        ELSE NULL
+                    END,
+                    state_updated_at_ms=COALESCE(uploaded_at_ms, started_at_ms)
+                """
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_recording_clip_state_retry "
+            "ON recording_clips(clip_state, next_retry_ms, started_at_ms)"
+        )
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -162,15 +210,16 @@ class GatewayDatabase:
         return dict(row) if row else None
 
     def upsert_clip(self, clip: dict) -> None:
+        item = {**clip, "clip_state": str(clip.get("clip_state") or "LOCAL_PENDING")}
         with self._lock, self.connect() as connection:
             connection.execute(
                 """
                 INSERT INTO recording_clips(
                     id, camera_id, relative_path, started_at_ms,
-                    duration_ms, size_bytes, modified_ns
+                    duration_ms, size_bytes, modified_ns, clip_state, state_updated_at_ms
                 ) VALUES (
                     :id, :camera_id, :relative_path, :started_at_ms,
-                    :duration_ms, :size_bytes, :modified_ns
+                    :duration_ms, :size_bytes, :modified_ns, :clip_state, :started_at_ms
                 )
                 ON CONFLICT(relative_path) DO UPDATE SET
                     camera_id=excluded.camera_id,
@@ -178,9 +227,15 @@ class GatewayDatabase:
                     duration_ms=excluded.duration_ms,
                     size_bytes=excluded.size_bytes,
                     modified_ns=excluded.modified_ns,
-                    local_state='AVAILABLE'
+                    local_state='AVAILABLE',
+                    local_deleted_at_ms=NULL,
+                    clip_state=CASE
+                        WHEN recording_clips.clip_state IN ('DRIVE_READY', 'LOCAL_CACHE') THEN 'LOCAL_CACHE'
+                        ELSE excluded.clip_state
+                    END,
+                    state_updated_at_ms=excluded.state_updated_at_ms
                 """,
-                clip,
+                item,
             )
 
     def mark_missing_clips(self, relative_paths: set[str]) -> None:
@@ -192,12 +247,28 @@ class GatewayDatabase:
             missing = indexed - relative_paths
             if missing:
                 connection.executemany(
-                    "UPDATE recording_clips SET local_state='MISSING' WHERE relative_path=?",
+                    """
+                    UPDATE recording_clips SET
+                        local_state='MISSING',
+                        upload_state=CASE
+                            WHEN upload_state='UPLOADED' AND remote_verified_at_ms IS NOT NULL
+                                THEN 'UPLOADED'
+                            ELSE 'FAILED'
+                        END,
+                        clip_state=CASE
+                            WHEN upload_state='UPLOADED' AND remote_verified_at_ms IS NOT NULL
+                                THEN 'DRIVE_READY'
+                            ELSE 'FAILED'
+                        END,
+                        last_error=CASE
+                            WHEN upload_state='UPLOADED' AND remote_verified_at_ms IS NOT NULL
+                                THEN last_error
+                            ELSE 'Local staging file disappeared before verified Drive upload'
+                        END,
+                        state_updated_at_ms=CAST(strftime('%s','now') AS INTEGER) * 1000
+                    WHERE relative_path=?
+                    """,
                     ((path,) for path in missing),
-                )
-                connection.execute(
-                    "DELETE FROM recording_clips "
-                    "WHERE local_state='MISSING' AND upload_state!='UPLOADED'"
                 )
 
     def list_clips(
@@ -207,7 +278,7 @@ class GatewayDatabase:
         to_ms: int | None = None,
         limit: int = 200,
     ) -> list[dict]:
-        clauses: list[str] = []
+        clauses: list[str] = ["clip_state!='RECORDING'"]
         values: list[object] = []
         if camera_id:
             clauses.append("camera_id=?")
@@ -223,7 +294,8 @@ class GatewayDatabase:
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT id, camera_id, started_at_ms, duration_ms, size_bytes, "
-                "local_state, upload_state, remote_id, remote_path, last_error, protected, motion "
+                "clip_state, local_state, upload_state, remote_id, remote_path, remote_file_id, "
+                "remote_size_bytes, remote_verified_at_ms, uploaded_at_ms, last_error, protected, motion "
                 f"FROM recording_clips{where} ORDER BY started_at_ms DESC LIMIT ?",
                 values,
             ).fetchall()
@@ -246,7 +318,7 @@ class GatewayDatabase:
             rows = connection.execute(
                 "SELECT * FROM recording_clips "
                 "WHERE local_state='AVAILABLE' "
-                "AND upload_state IN ('PENDING', 'FAILED') AND next_retry_ms<=? "
+                "AND clip_state IN ('LOCAL_PENDING', 'UPLOAD_RETRY') AND next_retry_ms<=? "
                 "ORDER BY started_at_ms LIMIT ?",
                 (now_ms, max(1, min(100, limit))),
             ).fetchall()
@@ -255,59 +327,114 @@ class GatewayDatabase:
     def mark_uploading(self, clip_id: str, remote_id: str, remote_path: str) -> None:
         with self._lock, self.connect() as connection:
             connection.execute(
-                "UPDATE recording_clips SET upload_state='UPLOADING', remote_id=?, "
-                "remote_path=?, upload_attempts=upload_attempts+1, last_error=NULL "
+                "UPDATE recording_clips SET upload_state='UPLOADING', clip_state='DRIVE_UPLOADING', "
+                "remote_id=?, remote_path=?, upload_attempts=upload_attempts+1, last_error=NULL, "
+                "state_updated_at_ms=CAST(strftime('%s','now') AS INTEGER) * 1000 "
                 "WHERE id=?",
                 (remote_id, remote_path, clip_id),
             )
 
-    def mark_uploaded(self, clip_id: str, uploaded_at_ms: int) -> None:
+    def mark_uploaded(
+        self,
+        clip_id: str,
+        uploaded_at_ms: int,
+        remote_file_id: str | None = None,
+        remote_size_bytes: int | None = None,
+        verified_at_ms: int | None = None,
+    ) -> None:
         with self._lock, self.connect() as connection:
+            current = connection.execute(
+                "SELECT remote_path, size_bytes FROM recording_clips WHERE id=?", (clip_id,)
+            ).fetchone()
+            if current is None:
+                return
+            file_id = remote_file_id or str(current["remote_path"] or "")
+            verified_size = int(remote_size_bytes if remote_size_bytes is not None else current["size_bytes"])
+            verified_at = int(verified_at_ms if verified_at_ms is not None else uploaded_at_ms)
+            if not file_id:
+                raise ValueError("remote_file_id is required before DRIVE_READY")
+            if verified_size != int(current["size_bytes"]):
+                raise ValueError("verified Drive size does not match local clip")
             connection.execute(
-                "UPDATE recording_clips SET upload_state='UPLOADED', uploaded_at_ms=?, "
-                "next_retry_ms=0, last_error=NULL WHERE id=?",
-                (uploaded_at_ms, clip_id),
+                "UPDATE recording_clips SET upload_state='UPLOADED', clip_state='LOCAL_CACHE', "
+                "uploaded_at_ms=?, remote_file_id=?, remote_size_bytes=?, remote_verified_at_ms=?, "
+                "local_cached_at_ms=?, next_retry_ms=0, last_error=NULL, state_updated_at_ms=? "
+                "WHERE id=?",
+                (uploaded_at_ms, file_id, verified_size, verified_at, uploaded_at_ms, uploaded_at_ms, clip_id),
             )
 
     def mark_upload_failed(self, clip_id: str, error: str, next_retry_ms: int) -> None:
         with self._lock, self.connect() as connection:
             connection.execute(
-                "UPDATE recording_clips SET upload_state='FAILED', last_error=?, "
-                "next_retry_ms=? WHERE id=?",
+                "UPDATE recording_clips SET upload_state='FAILED', "
+                "clip_state=CASE WHEN local_state='AVAILABLE' THEN 'UPLOAD_RETRY' ELSE 'FAILED' END, "
+                "last_error=?, next_retry_ms=?, state_updated_at_ms=CAST(strftime('%s','now') AS INTEGER) * 1000 "
+                "WHERE id=?",
                 (error[-500:], next_retry_ms, clip_id),
             )
 
     def reset_interrupted_uploads(self) -> None:
         with self._lock, self.connect() as connection:
             connection.execute(
-                "UPDATE recording_clips SET upload_state='FAILED', next_retry_ms=0, "
-                "last_error='Gateway restarted during upload' WHERE upload_state='UPLOADING'"
+                "UPDATE recording_clips SET upload_state='FAILED', "
+                "clip_state=CASE WHEN local_state='AVAILABLE' THEN 'UPLOAD_RETRY' ELSE 'FAILED' END, "
+                "next_retry_ms=0, last_error='Gateway restarted during upload' "
+                "WHERE upload_state='UPLOADING' OR clip_state='DRIVE_UPLOADING'"
             )
 
     def upload_counts(self) -> dict[str, int]:
-        result = {"PENDING": 0, "UPLOADING": 0, "FAILED": 0, "UPLOADED": 0}
+        states = (
+            "RECORDING", "LOCAL_PENDING", "DRIVE_UPLOADING", "DRIVE_READY",
+            "LOCAL_CACHE", "UPLOAD_RETRY", "FAILED",
+        )
+        result = {state: 0 for state in states}
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT upload_state, COUNT(*) AS count FROM recording_clips GROUP BY upload_state"
+                "SELECT clip_state, COUNT(*) AS count FROM recording_clips GROUP BY clip_state"
             ).fetchall()
         for row in rows:
-            result[str(row["upload_state"])] = int(row["count"])
+            result[str(row["clip_state"])] = int(row["count"])
+        terminal_failed = result["FAILED"]
+        result.update({
+            "PENDING": result["RECORDING"] + result["LOCAL_PENDING"],
+            "UPLOADING": result["DRIVE_UPLOADING"],
+            "FAILED": result["UPLOAD_RETRY"] + result["FAILED"],
+            "UPLOADED": result["DRIVE_READY"] + result["LOCAL_CACHE"],
+            "TERMINAL_FAILED": terminal_failed,
+        })
         return result
 
     def uploaded_local_clips_before(self, before_ms: int, limit: int = 100) -> list[dict]:
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM recording_clips WHERE local_state='AVAILABLE' "
-                "AND upload_state='UPLOADED' AND protected=0 AND uploaded_at_ms<=? "
+                "AND clip_state='LOCAL_CACHE' AND remote_verified_at_ms IS NOT NULL "
+                "AND remote_size_bytes=size_bytes AND uploaded_at_ms<=? "
                 "ORDER BY uploaded_at_ms LIMIT ?",
                 (before_ms, max(1, min(500, limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def local_cache_clips(self, limit: int = 100) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM recording_clips WHERE local_state='AVAILABLE' "
+                "AND clip_state='LOCAL_CACHE' AND remote_verified_at_ms IS NOT NULL "
+                "AND remote_size_bytes=size_bytes ORDER BY uploaded_at_ms, started_at_ms LIMIT ?",
+                (max(1, min(500, limit)),),
             ).fetchall()
         return [dict(row) for row in rows]
 
     def mark_local_missing(self, clip_id: str) -> None:
         with self._lock, self.connect() as connection:
             connection.execute(
-                "UPDATE recording_clips SET local_state='MISSING' WHERE id=?",
+                "UPDATE recording_clips SET local_state='MISSING', "
+                "upload_state=CASE WHEN remote_verified_at_ms IS NOT NULL AND remote_size_bytes=size_bytes "
+                "THEN 'UPLOADED' ELSE 'FAILED' END, "
+                "local_deleted_at_ms=CAST(strftime('%s','now') AS INTEGER) * 1000, "
+                "clip_state=CASE WHEN remote_verified_at_ms IS NOT NULL AND remote_size_bytes=size_bytes "
+                "THEN 'DRIVE_READY' ELSE 'FAILED' END, state_updated_at_ms=CAST(strftime('%s','now') AS INTEGER) * 1000 "
+                "WHERE id=?",
                 (clip_id,),
             )
 
@@ -326,7 +453,7 @@ class GatewayDatabase:
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT COUNT(*) AS count FROM recording_clips "
-                "WHERE remote_id=? AND upload_state='UPLOADED'",
+                "WHERE remote_id=? AND clip_state IN ('DRIVE_READY', 'LOCAL_CACHE')",
                 (remote_id,),
             ).fetchone()
         return int(row["count"])
@@ -384,7 +511,9 @@ class GatewayDatabase:
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM recording_clips WHERE remote_id=? "
-                "AND upload_state='UPLOADED' AND protected=0 AND started_at_ms<=? "
+                "AND clip_state IN ('DRIVE_READY', 'LOCAL_CACHE') "
+                "AND remote_verified_at_ms IS NOT NULL AND remote_size_bytes=size_bytes "
+                "AND protected=0 AND started_at_ms<=? "
                 "ORDER BY started_at_ms LIMIT ?",
                 (remote_id, before_ms, max(1, min(100, limit))),
             ).fetchall()

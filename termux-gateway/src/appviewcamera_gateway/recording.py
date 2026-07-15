@@ -23,15 +23,28 @@ LOGGER = logging.getLogger("appviewcamera.recording")
 def load_recording_config(settings: GatewaySettings) -> dict[str, Any]:
     raw = _read_json(settings.home / "config" / "recording.json", {})
     recording = raw.get("recording", {}) if isinstance(raw, dict) else {}
+    if "local_cache_retention_minutes" in recording:
+        cache_retention_minutes = int(recording["local_cache_retention_minutes"])
+    elif "uploaded_local_retention_minutes" in recording:
+        cache_retention_minutes = int(recording["uploaded_local_retention_minutes"])
+    elif "keep_uploaded_local_hours" in recording:
+        legacy_hours = int(recording["keep_uploaded_local_hours"])
+        legacy_minutes = int(recording.get("local_retention_minutes", 60))
+        # Stock config before Drive-primary used 12h/60m; migrate that default to 6h.
+        cache_retention_minutes = 360 if (legacy_hours, legacy_minutes) == (12, 60) else legacy_hours * 60
+    else:
+        cache_retention_minutes = int(recording.get("local_retention_minutes", 360))
     return {
         "enabled": bool(recording.get("enabled", False)),
         "root": str(recording.get("root", "recordings")),
         "segment_duration_seconds": max(10, min(3600, int(recording.get("segment_duration_seconds", 60)))),
         "part_duration_seconds": max(1, min(10, int(recording.get("part_duration_seconds", 1)))),
-        "local_retention_minutes": max(5, min(10080, int(recording.get("local_retention_minutes", 60)))),
-        "uploaded_local_retention_minutes": max(
-            0, min(10080, int(recording.get("uploaded_local_retention_minutes", 60)))
-        ),
+        "local_retention_minutes": max(5, min(10080, cache_retention_minutes)),
+        "local_cache_retention_minutes": max(5, min(10080, cache_retention_minutes)),
+        "local_min_free_bytes": max(256 * 1024**2, int(recording.get("local_min_free_bytes", 2 * 1024**3))),
+        "local_cleanup_start_percent": max(50, min(98, int(recording.get("local_cleanup_start_percent", 85)))),
+        "playback_cache_max_bytes": max(128 * 1024**2, int(recording.get("playback_cache_max_bytes", 2 * 1024**3))),
+        "playback_cache_retention_minutes": max(5, min(1440, int(recording.get("playback_cache_retention_minutes", 60)))),
         "prefer_substream": bool(recording.get("prefer_substream", True)),
     }
 
@@ -53,7 +66,9 @@ class RecordingManager:
         recording = raw.setdefault("recording", {})
         recording["enabled"] = bool(enabled)
         if local_retention_minutes is not None:
-            recording["local_retention_minutes"] = max(5, min(10080, int(local_retention_minutes)))
+            value = max(5, min(10080, int(local_retention_minutes)))
+            recording["local_retention_minutes"] = value
+            recording["local_cache_retention_minutes"] = value
         _atomic_json(self.config_path, raw)
         return self.status()
 
@@ -70,6 +85,7 @@ class RecordingManager:
         usage = shutil.disk_usage(self.settings.home)
         return {
             **config,
+            "storage_mode": "DRIVE_PRIMARY",
             "clip_count": self.database.clip_count(),
             "disk_free_bytes": usage.free,
             "disk_total_bytes": usage.total,
@@ -89,11 +105,15 @@ class RecordingManager:
                 continue
             stat = path.stat()
             seen.add(relative)
-            # Bỏ qua segment còn đang được MediaMTX ghi.
-            if now_ns - stat.st_mtime_ns < 2_000_000_000:
-                continue
+            # Index segment đang ghi, nhưng chỉ cho upload sau khi file đã ổn định.
+            is_recording = now_ns - stat.st_mtime_ns < 2_000_000_000
             existing = self.database.find_clip_by_path(relative)
-            if existing and existing["size_bytes"] == stat.st_size and existing["modified_ns"] == stat.st_mtime_ns:
+            if (
+                existing
+                and existing["size_bytes"] == stat.st_size
+                and existing["modified_ns"] == stat.st_mtime_ns
+                and existing.get("clip_state") != "RECORDING"
+            ):
                 continue
             started_at_ms = self._parse_started_at(path) or int(stat.st_mtime * 1000)
             clip = {
@@ -101,9 +121,10 @@ class RecordingManager:
                 "camera_id": camera_id,
                 "relative_path": relative,
                 "started_at_ms": started_at_ms,
-                "duration_ms": self._probe_duration_ms(path),
+                "duration_ms": None if is_recording else self._probe_duration_ms(path),
                 "size_bytes": stat.st_size,
                 "modified_ns": stat.st_mtime_ns,
+                "clip_state": "RECORDING" if is_recording else "LOCAL_PENDING",
             }
             self.database.upsert_clip(clip)
         self.database.mark_missing_clips(seen)
@@ -123,7 +144,10 @@ class RecordingManager:
         if local is not None:
             return local
         clip = self.database.get_clip(clip_id)
-        if not clip or clip.get("upload_state") != "UPLOADED":
+        if not clip or (
+            clip.get("clip_state") not in ("DRIVE_READY", "LOCAL_CACHE")
+            and clip.get("upload_state") != "UPLOADED"
+        ):
             return None
         remote_id = str(clip.get("remote_id") or "")
         remote_path = str(clip.get("remote_path") or "")
@@ -135,11 +159,22 @@ class RecordingManager:
                 cache.touch()
                 return cache
             drive_store.download_file(remote_id, remote_path, cache)
-            self._trim_playback_cache(keep=cache)
+            self._trim_playback_cache(
+                keep=cache,
+                max_bytes=self.config()["playback_cache_max_bytes"],
+                max_age_minutes=self.config()["playback_cache_retention_minutes"],
+            )
             return cache
 
-    def _trim_playback_cache(self, keep: Path, max_bytes: int = 2 * 1024**3) -> None:
+    def _trim_playback_cache(
+        self, keep: Path, max_bytes: int = 2 * 1024**3, max_age_minutes: int = 60
+    ) -> None:
         cache_root = keep.parent
+        files = [path for path in cache_root.glob("*.mp4") if path.is_file()]
+        cutoff_ns = time.time_ns() - max_age_minutes * 60 * 1_000_000_000
+        for path in files:
+            if path != keep and path.stat().st_mtime_ns < cutoff_ns:
+                path.unlink(missing_ok=True)
         files = [path for path in cache_root.glob("*.mp4") if path.is_file()]
         total = sum(path.stat().st_size for path in files)
         for path in sorted(files, key=lambda item: item.stat().st_mtime_ns):
@@ -247,8 +282,15 @@ class RecordingWorker:
         remote_path = f"{self.drive_store.remote_root()}/{clip['relative_path']}"
         self.database.mark_uploading(str(clip["id"]), remote_id, remote_path)
         try:
-            self.drive_store.upload_file(remote_id, local_path, remote_path)
-            self.database.mark_uploaded(str(clip["id"]), int(time.time() * 1000))
+            verification = self.drive_store.upload_file(remote_id, local_path, remote_path)
+            uploaded_at_ms = int(time.time() * 1000)
+            self.database.mark_uploaded(
+                str(clip["id"]),
+                uploaded_at_ms,
+                remote_file_id=str(verification["file_id"]),
+                remote_size_bytes=int(verification["size_bytes"]),
+                verified_at_ms=int(verification["verified_at_ms"]),
+            )
             self.drive_store.account_upload_completed(remote_id, int(clip["size_bytes"]))
         except Exception as error:
             attempts = int(clip.get("upload_attempts", 0)) + 1
@@ -260,17 +302,39 @@ class RecordingWorker:
             raise
 
     def _apply_retention(self) -> None:
-        retention_ms = self.manager.config()["local_retention_minutes"] * 60_000
+        config = self.manager.config()
+        retention_ms = config["local_cache_retention_minutes"] * 60_000
         before_ms = int(time.time() * 1000) - retention_ms
         for clip in self.database.uploaded_local_clips_before(before_ms):
-            path = self.manager.clip_path(str(clip["id"]))
-            if path is not None:
-                try:
-                    path.unlink()
-                except OSError as error:
-                    LOGGER.warning("Cannot remove uploaded clip %s: %s", path, error)
-                    continue
-            self.database.mark_local_missing(str(clip["id"]))
+            self._delete_verified_local(clip)
+
+        usage = shutil.disk_usage(self.manager.settings.home)
+        used_percent = int((usage.total - usage.free) * 100 / usage.total) if usage.total else 0
+        if usage.free >= config["local_min_free_bytes"] and used_percent < config["local_cleanup_start_percent"]:
+            return
+        for clip in self.database.local_cache_clips(limit=500):
+            if usage.free >= config["local_min_free_bytes"] and used_percent < config["local_cleanup_start_percent"]:
+                break
+            if self._delete_verified_local(clip):
+                usage = shutil.disk_usage(self.manager.settings.home)
+                used_percent = int((usage.total - usage.free) * 100 / usage.total) if usage.total else 0
+
+    def _delete_verified_local(self, clip: dict) -> bool:
+        if (
+            clip.get("clip_state") != "LOCAL_CACHE"
+            or not clip.get("remote_verified_at_ms")
+            or int(clip.get("remote_size_bytes") or -1) != int(clip["size_bytes"])
+        ):
+            return False
+        path = self.manager.clip_path(str(clip["id"]))
+        if path is not None:
+            try:
+                path.unlink()
+            except OSError as error:
+                LOGGER.warning("Cannot remove verified local cache %s: %s", path, error)
+                return False
+        self.database.mark_local_missing(str(clip["id"]))
+        return True
 
     def _apply_remote_retention(self) -> None:
         policy = self.drive_store.retention_policy()

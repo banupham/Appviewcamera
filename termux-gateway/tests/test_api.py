@@ -1,7 +1,9 @@
 import asyncio
 import json
+from dataclasses import replace
+from urllib.request import Request, urlopen
 
-from appviewcamera_gateway.api import GatewayRouter, create_runtime
+from appviewcamera_gateway.api import GatewayHttpServer, GatewayRouter, create_runtime
 
 
 def make_router(gateway_home):
@@ -128,6 +130,34 @@ def test_recording_protection_endpoint(gateway_home):
         assert code == 200
         assert clip["protected"] == 1
     finally:
+        loop.close()
+
+
+def test_recording_content_supports_http_range(gateway_home):
+    router, loop = make_router(gateway_home)
+    manager = router.runtime.recording
+    clip_path = manager.root / "camera01" / "range.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"0123456789")
+    router.runtime.database.upsert_clip({
+        "id": "range-clip", "camera_id": "camera01", "relative_path": "camera01/range.mp4",
+        "started_at_ms": 1, "duration_ms": 1000, "size_bytes": 10,
+        "modified_ns": clip_path.stat().st_mtime_ns,
+    })
+    server = GatewayHttpServer(replace(router.runtime.settings, api_port=0), router)
+    server.start()
+    port = server.server.server_address[1]
+    try:
+        request = Request(
+            f"http://127.0.0.1:{port}/api/recordings/range-clip/content",
+            headers={"Authorization": "Bearer test-token", "Range": "bytes=2-5"},
+        )
+        with urlopen(request, timeout=5) as response:
+            assert response.status == 206
+            assert response.headers["Content-Range"] == "bytes 2-5/10"
+            assert response.read() == b"2345"
+    finally:
+        server.stop()
         loop.close()
 
 

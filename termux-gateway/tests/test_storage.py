@@ -52,7 +52,7 @@ def test_upload_uses_copyto_and_verifies_remote_size(gateway_home):
     def runner(args, **kwargs):
         calls.append(args)
         if "lsjson" in args:
-            return CompletedProcess(args, 0, '{"Size":8,"IsDir":false}', "")
+            return CompletedProcess(args, 0, '{"Size":8,"IsDir":false,"ID":"drive-file-01"}', "")
         return CompletedProcess(args, 0, "", "")
 
     store = GoogleDriveStore(gateway_home, runner=runner)
@@ -60,12 +60,14 @@ def test_upload_uses_copyto_and_verifies_remote_size(gateway_home):
     clip = gateway_home / "clip.mp4"
     clip.write_bytes(b"fake-mp4")
 
-    store.upload_file("drive01", clip, "CameraBackup/camera01/clip.mp4")
+    verified = store.upload_file("drive01", clip, "CameraBackup/camera01/clip.mp4")
 
     assert "copyto" in calls[0]
     assert str(clip) in calls[0]
     assert "drive01:CameraBackup/camera01/clip.mp4" in calls[0]
     assert "lsjson" in calls[1]
+    assert verified["file_id"] == "drive-file-01"
+    assert verified["size_bytes"] == 8
 
 
 def test_remote_path_cannot_escape_drive_root(gateway_home):
@@ -77,6 +79,25 @@ def test_remote_path_cannot_escape_drive_root(gateway_home):
         assert False, "unsafe path must be rejected"
     except ValueError:
         pass
+
+
+def test_upload_without_drive_file_id_is_not_verified(gateway_home):
+    def runner(args, **kwargs):
+        if "lsjson" in args:
+            return CompletedProcess(args, 0, '{"Size":8,"IsDir":false}', "")
+        return CompletedProcess(args, 0, "", "")
+
+    store = GoogleDriveStore(gateway_home, runner=runner)
+    store.add("drive01", "Drive camera", TOKEN)
+    clip = gateway_home / "clip.mp4"
+    clip.write_bytes(b"fake-mp4")
+
+    try:
+        store.upload_file("drive01", clip, "CameraBackup/camera01/clip.mp4")
+        assert False, "missing Drive file ID must fail verification"
+    except RuntimeError as error:
+        assert "file ID" in str(error)
+    assert clip.exists()
 
 
 def test_drive_can_be_activated_and_switches_when_quota_is_high(gateway_home):

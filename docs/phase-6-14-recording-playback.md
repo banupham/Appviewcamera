@@ -2,6 +2,8 @@
 
 ## Luồng dữ liệu
 
+Kiến trúc Drive-primary và migration chi tiết: [drive-primary-migration.md](drive-primary-migration.md).
+
 ```text
 Camera substream (ưu tiên) -> MediaMTX fMP4 segment -> recordings/<camera>/<date>/
                                                         |
