@@ -10,13 +10,14 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .storage import GoogleDriveStore, REMOTE_ID_PATTERN
 
 
 LOCAL_OAUTH_ORIGIN = "http://127.0.0.1:53682"
-LOCAL_URL_PATTERN = re.compile(r"http://127\.0\.0\.1:53682/[^\s]+")
+LOCAL_URL_PATTERN = re.compile(r'''http://(?:127\.0\.0\.1|localhost):53682/[^\s"'<>]+''')
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -64,14 +65,19 @@ class DriveOAuthManager:
                 target=self._authorize, args=(session,), name="drive-oauth", daemon=True
             )
             thread.start()
-            deadline = time.monotonic() + 20
+            # Termux can need more than 20 seconds to cold-start rclone and
+            # initialize Android's network resolver on slower phones.
+            deadline = time.monotonic() + 40
             while session.status == "STARTING" and time.monotonic() < deadline:
                 self._changed.wait(timeout=0.5)
             if session.status == "ERROR":
                 raise RuntimeError(session.error or "Không khởi tạo được đăng nhập Google")
             if not session.authorization_url:
                 session.status = "ERROR"
-                session.error = "rclone không tạo URL đăng nhập trong thời gian cho phép"
+                session.error = (
+                    "rclone chưa tạo URL đăng nhập trong 40 giây; "
+                    "hãy thử lại và kiểm tra cổng 53682 không bị tiến trình cũ chiếm"
+                )
                 self._terminate(session)
                 raise RuntimeError(session.error)
             return self._public(session)
@@ -145,7 +151,8 @@ class DriveOAuthManager:
             self._terminate(session)
 
     def _external_authorization_url(self, local_url: str) -> str:
-        path = local_url.removeprefix(LOCAL_OAUTH_ORIGIN)
+        parsed = urlsplit(local_url)
+        path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
         response = self._request_local(path)
         location = response["headers"].get("Location")
         if response["status"] not in (301, 302, 303, 307, 308) or not location:

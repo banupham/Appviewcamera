@@ -1,7 +1,9 @@
 package com.banupham.appviewcamera.viewer
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -44,21 +47,50 @@ import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.CameraSummary
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
 import com.banupham.appviewcamera.viewer.player.PlaybackPlayer
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private var pendingPairingUri by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { ViewerScreen() } }
+        pendingPairingUri = intent?.dataString
+        setContent {
+            MaterialTheme {
+                ViewerScreen(
+                    pairingUri = pendingPairingUri,
+                    onPairingConsumed = { pendingPairingUri = null }
+                )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingPairingUri = intent.dataString
     }
 }
 
 @Composable
-private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
+private fun ViewerScreen(
+    pairingUri: String? = null,
+    onPairingConsumed: () -> Unit = {},
+    viewModel: ViewerViewModel = viewModel()
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var selectedSection by remember { mutableStateOf(ViewerSection.LIVE) }
+    LaunchedEffect(pairingUri) {
+        pairingUri?.let {
+            selectedSection = ViewerSection.SETTINGS
+            viewModel.applyPairingUri(it)
+            onPairingConsumed()
+        }
+    }
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -126,7 +158,12 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
                     onActivate = viewModel::activateDrive,
                     onDelete = viewModel::deleteDrive
                 )
-                ViewerSection.SETTINGS -> SettingsScreen(state, viewModel::saveConfig, viewModel::refresh)
+                ViewerSection.SETTINGS -> SettingsScreen(
+                    state,
+                    viewModel::saveConfig,
+                    viewModel::applyPairingUri,
+                    viewModel::refresh
+                )
             }
         }
     }
@@ -558,14 +595,40 @@ private fun CameraEditorDialog(
 private fun SettingsScreen(
     state: ViewerUiState,
     onSave: (String, String, String, String) -> Unit,
+    onPair: (String) -> Unit,
     onRefresh: () -> Unit
 ) {
     var host by remember(state.config.host) { mutableStateOf(state.config.host) }
     var apiPort by remember(state.config.apiPort) { mutableStateOf(state.config.apiPort.toString()) }
     var rtspPort by remember(state.config.rtspPort) { mutableStateOf(state.config.rtspPort.toString()) }
     var token by remember(state.config.apiToken) { mutableStateOf(state.config.apiToken) }
+    val clipboard = LocalClipboardManager.current
+    val qrScanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let(onPair)
+    }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Kết nối Termux Gateway", style = MaterialTheme.typography.titleMedium) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        qrScanner.launch(
+                            ScanOptions()
+                                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                .setPrompt("Quét QR ghép nối trên Gateway")
+                                .setBeepEnabled(false)
+                                .setOrientationLocked(false)
+                        )
+                    }
+                ) { Text("Quét QR") }
+                OutlinedButton(
+                    onClick = {
+                        clipboard.getText()?.text?.takeIf(String::isNotBlank)?.let(onPair)
+                    }
+                ) { Text("Dán chuỗi ghép nối") }
+            }
+        }
+        item { Text("Cùng điện thoại: sao chép chuỗi trong Termux rồi chọn Dán. Khác điện thoại: quét QR LAN/Tailscale.") }
         item { OutlinedTextField(host, { host = it }, modifier = Modifier.fillMaxWidth(), label = { Text("IP LAN hoặc Tailscale") }) }
         item {
             OutlinedTextField(

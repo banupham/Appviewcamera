@@ -62,7 +62,7 @@ class DriveOAuthCoordinator(
     private fun tryBindCallbackServer(): ServerSocket? = try {
         ServerSocket().apply {
             reuseAddress = true
-            bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), CALLBACK_PORT), 4)
+            bind(InetSocketAddress(InetAddress.getByName("localhost"), CALLBACK_PORT), 4)
             soTimeout = 1_000
         }
     } catch (_: Exception) {

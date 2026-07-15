@@ -1,7 +1,9 @@
 import json
+import asyncio
+from unittest.mock import AsyncMock
 
 from appviewcamera_gateway.config import CameraStore, GatewaySettings, read_secrets
-from appviewcamera_gateway.mediamtx import camera_source, render_mediamtx_config
+from appviewcamera_gateway.mediamtx import MediaMtxSupervisor, camera_source, render_mediamtx_config
 
 
 def test_camera_password_is_kept_out_of_camera_config(gateway_home):
@@ -63,3 +65,17 @@ def test_mediamtx_records_substream_only_when_globally_enabled(gateway_home):
     assert record_path["record"] is True
     assert record_path["recordSegmentDuration"] == "60s"
     assert record_path["recordDeleteAfter"] == "0s"
+
+
+def test_hot_reconfigure_does_not_stop_running_mediamtx(gateway_home):
+    settings = GatewaySettings.load(gateway_home)
+    supervisor = MediaMtxSupervisor(settings, CameraStore(settings))
+    supervisor.process = type("RunningProcess", (), {"returncode": None})()
+    supervisor.stop = AsyncMock()
+    supervisor.start = AsyncMock()
+
+    asyncio.run(supervisor.reconfigure())
+
+    supervisor.stop.assert_not_awaited()
+    supervisor.start.assert_not_awaited()
+    assert settings.mediamtx_config.exists()

@@ -16,6 +16,7 @@ import com.banupham.appviewcamera.viewer.api.StorageSummary
 import com.banupham.appviewcamera.viewer.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.settings.GatewayConfigStore
+import com.banupham.appviewcamera.viewer.settings.PairingUriParser
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,6 +82,25 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         refresh()
     }
 
+    fun applyPairingUri(value: String) {
+        val config = PairingUriParser.parse(value).getOrElse { error ->
+            _state.update { it.copy(message = error.message ?: "Chuỗi ghép nối không hợp lệ") }
+            return
+        }
+        runCatching { configStore.save(config) }.onFailure { error ->
+            _state.update { it.copy(message = "Không lưu được ghép nối: ${error.message}") }
+            return
+        }
+        _state.update {
+            it.copy(
+                config = config,
+                gatewayConnectionError = null,
+                message = "Đã nhận cấu hình; đang kiểm tra Gateway…"
+            )
+        }
+        refresh()
+    }
+
     fun refresh() {
         val config = _state.value.config.validate().getOrElse { error ->
             _state.update { it.copy(message = error.message) }
@@ -117,11 +137,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }.onFailure { error ->
                 _state.update {
-                    val text = "Không kết nối được Gateway: ${error.message ?: "không rõ lỗi"}"
+                    val networkFailure = error is IOException
+                    val text = if (networkFailure) {
+                        "Không kết nối được Gateway: ${error.message ?: "không rõ lỗi"}"
+                    } else {
+                        error.message ?: "Gateway từ chối yêu cầu"
+                    }
                     it.copy(
                         loading = false,
                         gatewayStatus = null,
-                        gatewayConnectionError = text,
+                        gatewayConnectionError = text.takeIf { networkFailure },
                         message = text
                     )
                 }

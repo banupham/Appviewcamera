@@ -147,6 +147,19 @@ class MediaMtxSupervisor:
         self.restart_count = 0
         await self.start()
 
+    async def reconfigure(self) -> None:
+        """Apply a new config without terminating RTSP clients.
+
+        MediaMTX watches its configuration file and hot-reloads path changes.
+        Rewriting the file is therefore enough for recording and camera changes;
+        stopping the process here would disconnect every live viewer.
+        """
+        write_mediamtx_config(self.settings, self.camera_store.list())
+        if self.process is None or self.process.returncode is not None:
+            await self.stop()
+            self.restart_count = 0
+            await self.start()
+
     async def stop(self) -> None:
         self.stopping = True
         if self.process and self.process.returncode is None:

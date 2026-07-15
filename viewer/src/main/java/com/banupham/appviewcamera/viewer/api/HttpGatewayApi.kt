@@ -9,6 +9,8 @@ import java.net.URL
 import java.net.URLEncoder
 import org.json.JSONObject
 
+class GatewayHttpException(val statusCode: Int, message: String) : Exception(message)
+
 class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
     override suspend fun status(): GatewayStatus = GatewayJsonParser.status(request("GET", "/api/status"))
 
@@ -144,8 +146,13 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
             val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (statusCode !in 200..299) {
-                val message = response.take(MAX_ERROR_LENGTH).ifBlank { "HTTP $statusCode" }
-                throw IOException("Gateway trả lỗi $statusCode: $message")
+                val detail = runCatching { JSONObject(response).optString("detail") }
+                    .getOrNull()
+                    .orEmpty()
+                    .ifBlank { response }
+                    .take(MAX_ERROR_LENGTH)
+                    .ifBlank { "HTTP $statusCode" }
+                throw GatewayHttpException(statusCode, "Gateway trả lỗi $statusCode: $detail")
             }
             response
         } catch (error: IOException) {

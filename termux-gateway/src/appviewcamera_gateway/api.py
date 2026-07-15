@@ -162,7 +162,7 @@ class GatewayRouter:
                     bool(request.get("enabled", False)),
                     int(request["local_retention_minutes"]) if "local_retention_minutes" in request else None,
                 )
-                self._await(self.runtime.mediamtx.reload(), 20)
+                self._await(self.runtime.mediamtx.reconfigure(), 20)
                 return 200, result
             if method == "GET" and path == "/api/recordings":
                 self.runtime.recording.scan(self.runtime.camera_store.list())
@@ -205,12 +205,12 @@ class GatewayRouter:
                         return 400, {"detail": "camera_id không khớp nội dung"}
                     password = request.pop("password", None)
                     saved = self.runtime.camera_store.upsert(request, password)
-                    self._await(self.runtime.mediamtx.reload(), 20)
+                    self._await(self.runtime.mediamtx.reconfigure(), 20)
                     return 200, saved
                 if method == "DELETE":
                     if not self.runtime.camera_store.delete(camera_id):
                         return 404, {"detail": "Không tìm thấy camera"}
-                    self._await(self.runtime.mediamtx.reload(), 20)
+                    self._await(self.runtime.mediamtx.reconfigure(), 20)
                     return 200, {"deleted": True}
             if path.startswith("/api/storage/drives/"):
                 suffix = path.removeprefix("/api/storage/drives/")

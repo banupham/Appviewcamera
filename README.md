@@ -1,5 +1,7 @@
 # AppViewCamera
 
+Phiên bản hiện tại: Viewer/Gateway 1.1.0.
+
 Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera chạy
 **Termux Gateway**, còn điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua
 Tailscale như một mạng IP riêng.

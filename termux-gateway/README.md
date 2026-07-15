@@ -36,6 +36,14 @@ Mỗi lần `start.sh` chạy thành công, Termux tự hiển thị API secret,
 ~/appviewcamera/scripts/pairing.sh
 ```
 
+Lệnh này hiển thị chuỗi cho Viewer cùng điện thoại và QR cho Viewer ở máy khác. Trong
+Viewer mở `Cài đặt`, chọn `Dán chuỗi ghép nối` hoặc `Quét QR`. Có thể chỉ định IP
+LAN/Tailscale khi tạo QR bằng:
+
+```bash
+PAIR_HOST=100.x.y.z ~/appviewcamera/scripts/pairing.sh
+```
+
 ## Cập nhật từ GitHub
 
 Nếu source được clone tại `~/appviewcamera-source`, từ các phiên bản sau chỉ cần chạy:

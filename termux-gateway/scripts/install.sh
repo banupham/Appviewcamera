@@ -11,7 +11,7 @@ if ! command -v pkg >/dev/null 2>&1; then
 fi
 
 echo "[1/5] Cài gói Termux"
-pkg install -y python curl tar ffmpeg rclone
+pkg install -y python curl tar ffmpeg rclone qrencode iproute2
 
 echo "[2/5] Tạo thư mục $APP_HOME"
 mkdir -p "$APP_HOME"/{bin,config,data,logs,recordings,run,scripts,src}
