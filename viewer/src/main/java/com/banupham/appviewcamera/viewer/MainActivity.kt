@@ -242,6 +242,23 @@ private fun StorageScreen(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        state.storageSummary?.let { summary ->
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("Tổng quan lưu trữ", style = MaterialTheme.typography.titleMedium)
+                        Text("Drive: ${summary.onlineDriveCount}/${summary.driveCount} online")
+                        Text("Tổng ${formatBytes(summary.totalBytes)} • còn ${formatBytes(summary.freeBytes)}")
+                        summary.averageBitrateBps?.let { Text("Bitrate ghi hình: ${formatBitrate(it)}") }
+                        summary.estimatedDailyBytes?.let { Text("Ước tính mỗi ngày: ${formatBytes(it)}") }
+                        Text(
+                            summary.estimatedRetentionSeconds?.let { "Có thể lưu khoảng ${formatRetention(it)}" }
+                                ?: "Đang thu thập dữ liệu để ước tính số ngày lưu"
+                        )
+                    }
+                }
+            }
+        }
         item {
             Text(
                 "OAuth token được gửi một lần tới Gateway, lưu trong rclone.conf và không lưu trên Viewer.",
@@ -284,6 +301,15 @@ private fun StorageScreen(
             }
         )
     }
+}
+
+private fun formatBitrate(value: Long): String =
+    if (value >= 1_000_000) "%.2f Mbps".format(value / 1_000_000.0) else "%.0f Kbps".format(value / 1_000.0)
+
+private fun formatRetention(seconds: Long): String {
+    val days = seconds / 86_400
+    val hours = seconds % 86_400 / 3_600
+    return if (days > 0) "$days ngày $hours giờ" else "$hours giờ"
 }
 
 @Composable

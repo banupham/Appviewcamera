@@ -277,3 +277,13 @@ class GatewayDatabase:
                 (remote_id,),
             ).fetchone()
         return int(row["count"])
+
+    def recording_statistics(self) -> dict:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS clip_count, COALESCE(SUM(size_bytes), 0) AS total_bytes, "
+                "COALESCE(SUM(duration_ms), 0) AS total_duration_ms, "
+                "MIN(started_at_ms) AS first_clip_ms, MAX(started_at_ms) AS last_clip_ms "
+                "FROM recording_clips"
+            ).fetchone()
+        return dict(row)

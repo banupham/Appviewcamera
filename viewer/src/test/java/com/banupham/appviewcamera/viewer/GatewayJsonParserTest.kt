@@ -46,4 +46,14 @@ class GatewayJsonParserTest {
         assertEquals(1, status.pendingUploads)
         assertEquals("UPLOADED", clips.single().uploadState)
     }
+
+    @Test
+    fun parsesStorageEstimate() {
+        val summary = GatewayJsonParser.storageSummary(
+            """{"drive_count":2,"online_drive_count":1,"total_bytes":10000,"used_bytes":4000,"free_bytes":6000,"average_bitrate_bps":800000,"estimated_daily_bytes":8640000000,"estimated_retention_seconds":7200,"collecting_statistics":false}"""
+        )
+        assertEquals(2, summary.driveCount)
+        assertEquals(800_000L, summary.averageBitrateBps)
+        assertEquals(7_200L, summary.estimatedRetentionSeconds)
+    }
 }

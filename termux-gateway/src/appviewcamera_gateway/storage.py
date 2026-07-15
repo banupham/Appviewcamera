@@ -7,6 +7,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -113,6 +114,7 @@ class GoogleDriveStore:
                 quota = json.loads(completed.stdout or "{}")
                 account["status"] = "ONLINE"
                 account["last_error"] = None
+                account["last_checked_ms"] = int(time.time() * 1000)
                 account["quota"] = {
                     key: int(quota[key])
                     for key in ("total", "used", "free", "trashed", "other")
@@ -122,6 +124,7 @@ class GoogleDriveStore:
                 account["status"] = "ERROR"
                 account["last_error"] = str(error)
                 account["quota"] = None
+                account["last_checked_ms"] = int(time.time() * 1000)
             _atomic_json(self.metadata_path, raw)
             return self._public_account(account, {normalized_id})
 
@@ -138,6 +141,11 @@ class GoogleDriveStore:
             return None
         active = next((account for account in accounts if account["active"]), accounts[0])
         policy = self._read_metadata().get("policy", {})
+        refresh_hours = max(1, int(policy.get("quota_refresh_hours", 6)))
+        checked_ms = int(active.get("last_checked_ms") or 0)
+        if int(time.time() * 1000) - checked_ms >= refresh_hours * 3_600_000:
+            active = self.refresh(str(active["id"]))
+            accounts = [account for account in self.list() if account["configured"]]
         threshold = max(1, min(100, int(policy.get("switch_at_percent", 90))))
         quota = active.get("quota") or {}
         total = int(quota.get("total") or 0)
@@ -180,6 +188,46 @@ class GoogleDriveStore:
     def remote_root(self) -> str:
         policy = self._read_metadata().get("policy", {})
         return self._safe_remote_path(str(policy.get("remote_root", "CameraBackup")))
+
+    def account_upload_completed(self, remote_id: str, size_bytes: int) -> None:
+        with self._lock:
+            raw = self._read_metadata()
+            account = next(
+                (item for item in raw["accounts"] if item.get("id") == remote_id), None
+            )
+            if not account or not isinstance(account.get("quota"), dict):
+                return
+            quota = account["quota"]
+            if quota.get("used") is not None:
+                quota["used"] = int(quota["used"]) + max(0, size_bytes)
+            if quota.get("free") is not None:
+                quota["free"] = max(0, int(quota["free"]) - max(0, size_bytes))
+            _atomic_json(self.metadata_path, raw)
+
+    def summary(self, statistics: dict[str, Any]) -> dict[str, Any]:
+        accounts = self.list()
+        quotas = [account["quota"] for account in accounts if account.get("quota")]
+        total = sum(int(quota.get("total") or 0) for quota in quotas)
+        used = sum(int(quota.get("used") or 0) for quota in quotas)
+        free = sum(int(quota.get("free") or 0) for quota in quotas)
+        duration_ms = int(statistics.get("total_duration_ms") or 0)
+        recorded_bytes = int(statistics.get("total_bytes") or 0)
+        bitrate = int(recorded_bytes * 8_000 / duration_ms) if duration_ms > 0 else None
+        daily_bytes = int(bitrate * 86_400 / 8) if bitrate else None
+        retention_seconds = int(free / daily_bytes * 86_400) if daily_bytes else None
+        return {
+            "drive_count": len(accounts),
+            "online_drive_count": sum(1 for account in accounts if account["status"] == "ONLINE"),
+            "total_bytes": total,
+            "used_bytes": used,
+            "free_bytes": free,
+            "recorded_bytes": recorded_bytes,
+            "recorded_duration_ms": duration_ms,
+            "average_bitrate_bps": bitrate,
+            "estimated_daily_bytes": daily_bytes,
+            "estimated_retention_seconds": retention_seconds,
+            "collecting_statistics": bitrate is None,
+        }
 
     def upload_file(self, remote_id: str, local_path: Path, remote_path: str) -> None:
         normalized_id = self._require_remote(remote_id)
@@ -326,5 +374,6 @@ class GoogleDriveStore:
             "configured": account_id in configured,
             "status": str(account.get("status", "NOT_CHECKED")),
             "last_error": account.get("last_error"),
+            "last_checked_ms": int(account.get("last_checked_ms") or 0),
             "quota": account.get("quota"),
         }

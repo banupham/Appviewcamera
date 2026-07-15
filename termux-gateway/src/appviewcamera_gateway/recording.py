@@ -246,6 +246,7 @@ class RecordingWorker:
         try:
             self.drive_store.upload_file(remote_id, local_path, remote_path)
             self.database.mark_uploaded(str(clip["id"]), int(time.time() * 1000))
+            self.drive_store.account_upload_completed(remote_id, int(clip["size_bytes"]))
         except Exception as error:
             attempts = int(clip.get("upload_attempts", 0)) + 1
             schedule = self.drive_store.retry_seconds()

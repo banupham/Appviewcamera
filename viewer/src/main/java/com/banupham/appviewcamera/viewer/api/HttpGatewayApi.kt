@@ -48,6 +48,9 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
     override suspend fun drives(): List<GoogleDriveAccount> =
         GatewayJsonParser.drives(request("GET", "/api/storage/drives"))
 
+    override suspend fun storageSummary(): StorageSummary =
+        GatewayJsonParser.storageSummary(request("GET", "/api/storage/summary"))
+
     override suspend fun addDrive(drive: GoogleDriveMutation): GoogleDriveAccount {
         val body = JSONObject().apply {
             put("id", drive.id)

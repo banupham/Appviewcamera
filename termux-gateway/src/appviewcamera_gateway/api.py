@@ -115,6 +115,10 @@ class GatewayRouter:
                 return 200, self.runtime.camera_store.list()
             if method == "GET" and path == "/api/storage/drives":
                 return 200, self.runtime.drive_store.list()
+            if method == "GET" and path == "/api/storage/summary":
+                return 200, self.runtime.drive_store.summary(
+                    self.runtime.database.recording_statistics()
+                )
             if method == "POST" and path == "/api/storage/drives":
                 request = json.loads(body.decode("utf-8"))
                 return 201, self.runtime.drive_store.add(

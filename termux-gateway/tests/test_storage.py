@@ -88,3 +88,14 @@ def test_drive_can_be_activated_and_switches_when_quota_is_high(gateway_home):
 
     assert selected["active"] is True
     assert next(item for item in store.list() if item["id"] == "drive01")["active"] is False
+
+
+def test_storage_summary_estimates_daily_usage_and_retention(gateway_home):
+    store = GoogleDriveStore(gateway_home)
+    summary = store.summary(
+        {"total_bytes": 1_000_000, "total_duration_ms": 10_000}
+    )
+
+    assert summary["average_bitrate_bps"] == 800_000
+    assert summary["estimated_daily_bytes"] == 8_640_000_000
+    assert summary["collecting_statistics"] is False

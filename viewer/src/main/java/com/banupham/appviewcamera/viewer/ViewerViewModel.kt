@@ -12,6 +12,7 @@ import com.banupham.appviewcamera.viewer.api.GoogleDriveAccount
 import com.banupham.appviewcamera.viewer.api.GoogleDriveMutation
 import com.banupham.appviewcamera.viewer.api.RecordingClip
 import com.banupham.appviewcamera.viewer.api.RecordingStatus
+import com.banupham.appviewcamera.viewer.api.StorageSummary
 import com.banupham.appviewcamera.viewer.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.settings.GatewayConfigStore
@@ -30,6 +31,7 @@ data class ViewerUiState(
     val cameras: List<CameraSummary> = emptyList(),
     val candidates: List<DiscoveryCandidate> = emptyList(),
     val drives: List<GoogleDriveAccount> = emptyList(),
+    val storageSummary: StorageSummary? = null,
     val recordingStatus: RecordingStatus? = null,
     val recordings: List<RecordingClip> = emptyList(),
     val selectedRecordingId: String? = null,
@@ -86,7 +88,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val cameras = async { api.cameras() }
                 val drives = async { api.drives() }
                 val recording = async { api.recordingStatus() }
-                RefreshPayload(status.await(), cameras.await(), drives.await(), recording.await())
+                val storage = async { api.storageSummary() }
+                RefreshPayload(status.await(), cameras.await(), drives.await(), recording.await(), storage.await())
             }.onSuccess { payload ->
                 val gatewayStatus = payload.gatewayStatus
                 val cameras = payload.cameras
@@ -97,6 +100,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         gatewayStatus = gatewayStatus,
                         cameras = cameras,
                         drives = payload.drives,
+                        storageSummary = payload.storageSummary,
                         recordingStatus = payload.recordingStatus,
                         selectedCameraId = selected,
                         loading = false,
@@ -259,5 +263,6 @@ private data class RefreshPayload(
     val gatewayStatus: GatewayStatus,
     val cameras: List<CameraSummary>,
     val drives: List<GoogleDriveAccount>,
-    val recordingStatus: RecordingStatus
+    val recordingStatus: RecordingStatus,
+    val storageSummary: StorageSummary
 )

@@ -80,6 +80,9 @@ def test_worker_uploads_pending_clip_and_marks_verified(gateway_home, monkeypatc
         def upload_file(self, remote_id, local_path, remote_path):
             self.uploaded.append((remote_id, local_path, remote_path))
 
+        def account_upload_completed(self, remote_id, size_bytes):
+            pass
+
         def retry_seconds(self):
             return [60]
 

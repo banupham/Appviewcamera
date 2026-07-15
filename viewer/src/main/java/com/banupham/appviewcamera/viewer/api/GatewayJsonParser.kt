@@ -82,6 +82,21 @@ object GatewayJsonParser {
         }
     }
 
+    fun storageSummary(payload: String): StorageSummary {
+        val root = JSONObject(payload)
+        return StorageSummary(
+            driveCount = root.optInt("drive_count", 0),
+            onlineDriveCount = root.optInt("online_drive_count", 0),
+            totalBytes = root.optLong("total_bytes", 0),
+            usedBytes = root.optLong("used_bytes", 0),
+            freeBytes = root.optLong("free_bytes", 0),
+            averageBitrateBps = root.optionalLong("average_bitrate_bps"),
+            estimatedDailyBytes = root.optionalLong("estimated_daily_bytes"),
+            estimatedRetentionSeconds = root.optionalLong("estimated_retention_seconds"),
+            collectingStatistics = root.optBoolean("collecting_statistics", true)
+        )
+    }
+
     fun recordingStatus(payload: String): RecordingStatus {
         val root = JSONObject(payload)
         val uploads = root.optJSONObject("upload_counts")

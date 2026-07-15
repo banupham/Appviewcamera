@@ -64,6 +64,18 @@ data class GoogleDriveMutation(
     val oauthToken: String
 )
 
+data class StorageSummary(
+    val driveCount: Int,
+    val onlineDriveCount: Int,
+    val totalBytes: Long,
+    val usedBytes: Long,
+    val freeBytes: Long,
+    val averageBitrateBps: Long?,
+    val estimatedDailyBytes: Long?,
+    val estimatedRetentionSeconds: Long?,
+    val collectingStatistics: Boolean
+)
+
 data class RecordingStatus(
     val enabled: Boolean,
     val localRetentionMinutes: Int,
