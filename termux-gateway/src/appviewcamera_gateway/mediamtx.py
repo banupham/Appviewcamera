@@ -48,7 +48,13 @@ def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> di
             primary_path.update({
                 "sourceOnDemand": False,
                 "record": True,
-                "recordPath": str(recording_root / camera_id / "%Y-%m-%d" / "%Y-%m-%d_%H-%M-%S-%f"),
+                # MediaMTX 1.18 requires the %path variable. Keep camera_id as
+                # the first directory so the existing SQLite scanner still
+                # maps every segment to the configured camera.
+                "recordPath": str(
+                    recording_root / camera_id / "%path" / "%Y-%m-%d" /
+                    "%Y-%m-%d_%H-%M-%S-%f"
+                ),
                 "recordFormat": "fmp4",
                 "recordPartDuration": f"{recording['part_duration_seconds']}s",
                 "recordSegmentDuration": f"{recording['segment_duration_seconds']}s",

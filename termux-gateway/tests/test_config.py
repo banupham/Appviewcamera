@@ -79,6 +79,8 @@ def test_enabled_camera_records_automatically_in_sixty_second_segments(gateway_h
     record_path = rendered["paths"]["one"]
     assert record_path["source"].endswith("/main")
     assert record_path["record"] is True
+    assert "%path" in record_path["recordPath"]
+    assert "/one/%path/" in record_path["recordPath"].replace("\\", "/")
     assert record_path["recordSegmentDuration"] == "60s"
     assert record_path["recordDeleteAfter"] == "0s"
 
