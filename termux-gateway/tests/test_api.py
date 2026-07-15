@@ -161,6 +161,92 @@ def test_recording_content_supports_http_range(gateway_home):
         loop.close()
 
 
+def test_playback_timeline_uses_sqlite_and_drive_before_youtube(gateway_home, monkeypatch):
+    router, loop = make_router(gateway_home)
+    database = router.runtime.database
+    database.upsert_clip({
+        "id": "indexed-drive", "camera_id": "camera01", "relative_path": "camera01/indexed.mp4",
+        "started_at_ms": 1_752_556_800_000, "duration_ms": 60_000, "size_bytes": 8,
+        "modified_ns": 1,
+    })
+    database.mark_uploading("indexed-drive", "drive01", "CameraBackup/camera01/indexed.mp4")
+    database.mark_uploaded("indexed-drive", 1, "drive-file-01", 8, 1)
+    database.mark_local_missing("indexed-drive")
+    database.set_youtube_source("indexed-drive", "PROCESSING", updated_at_ms=2)
+    monkeypatch.setattr(router.runtime.recording, "scan", lambda *_: (_ for _ in ()).throw(
+        AssertionError("timeline must not scan local, Drive or YouTube")
+    ))
+    monkeypatch.setattr(router.runtime.drive_store, "list", lambda: (_ for _ in ()).throw(
+        AssertionError("timeline must not query Drive")
+    ))
+    try:
+        days_code, days = router.route(
+            "GET", "/api/playback/days?camera_id=camera01", "Bearer test-token"
+        )
+        code, payload = router.route(
+            "GET",
+            "/api/playback/timeline?camera_id=camera01&from_ms=1752556800000&to_ms=1752643200000",
+            "Bearer test-token",
+        )
+        assert days_code == 200
+        assert days["days"][0]["item_count"] == 1
+        assert code == 200
+        assert payload["count"] == 1
+        assert payload["items"][0]["preferred_source"] == "DRIVE_READY"
+        assert payload["items"][0]["drive_available"] is True
+        assert payload["items"][0]["youtube_available"] is False
+        assert payload["items"][0]["status"] == "READY"
+    finally:
+        loop.close()
+
+
+def test_playback_youtube_source_has_exact_offset_without_oauth(gateway_home):
+    router, loop = make_router(gateway_home)
+    database = router.runtime.database
+    database.upsert_clip({
+        "id": "youtube-item", "camera_id": "camera01", "relative_path": "camera01/youtube.mp4",
+        "started_at_ms": 1_000, "duration_ms": 60_000, "size_bytes": 8, "modified_ns": 1,
+    })
+    database.mark_missing_clips(set())
+    database.set_youtube_source("youtube-item", "YOUTUBE_READY", "private-video", 125, 2)
+    try:
+        code, payload = router.route(
+            "GET", "/api/playback/items/youtube-item/sources", "Bearer test-token"
+        )
+        youtube = next(source for source in payload["sources"] if source["type"] == "YOUTUBE_READY")
+        assert code == 200
+        assert youtube["start_offset_seconds"] == 125
+        assert youtube["watch_url"] == "https://www.youtube.com/watch?v=private-video&t=125s"
+        assert "token" not in youtube["watch_url"].lower()
+        assert payload["preferred_source"] == "YOUTUBE_READY"
+    finally:
+        loop.close()
+
+
+def test_playback_item_without_ready_source_has_no_stream(gateway_home):
+    router, loop = make_router(gateway_home)
+    database = router.runtime.database
+    database.upsert_clip({
+        "id": "not-ready", "camera_id": "camera01", "relative_path": "camera01/not-ready.mp4",
+        "started_at_ms": 1_000, "duration_ms": 60_000, "size_bytes": 8, "modified_ns": 1,
+    })
+    database.mark_missing_clips(set())
+    database.set_youtube_source("not-ready", "PROCESSING", updated_at_ms=2)
+    try:
+        code, item = router.route(
+            "GET", "/api/playback/items/not-ready", "Bearer test-token"
+        )
+        stream_code, _ = router.route(
+            "GET", "/api/playback/items/not-ready/stream", "Bearer test-token"
+        )
+        assert code == 200
+        assert item["status"] == "PROCESSING"
+        assert item["preferred_source"] is None
+        assert stream_code == 409
+    finally:
+        loop.close()
+
+
 def test_drive_oauth_start_is_exposed_without_returning_token(gateway_home, monkeypatch):
     router, loop = make_router(gateway_home)
     monkeypatch.setattr(

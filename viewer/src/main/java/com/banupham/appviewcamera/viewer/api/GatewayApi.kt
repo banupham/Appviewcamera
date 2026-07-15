@@ -20,4 +20,8 @@ interface GatewayApi {
     suspend fun updateRecording(enabled: Boolean, localRetentionMinutes: Int): RecordingStatus
     suspend fun recordings(cameraId: String? = null, fromMs: Long? = null, toMs: Long? = null): List<RecordingClip>
     suspend fun protectRecording(recordingId: String, protected: Boolean)
+    suspend fun playbackDays(cameraId: String): List<PlaybackDay>
+    suspend fun playbackTimeline(cameraId: String, fromMs: Long, toMs: Long): List<PlaybackItem>
+    suspend fun playbackItem(itemId: String): PlaybackItem
+    suspend fun playbackSources(itemId: String): PlaybackSources
 }

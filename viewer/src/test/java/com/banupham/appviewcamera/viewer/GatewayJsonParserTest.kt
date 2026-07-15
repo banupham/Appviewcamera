@@ -71,4 +71,28 @@ class GatewayJsonParserTest {
         assertEquals(302, proxy.status)
         assertEquals("ok", proxy.body.toString(Charsets.UTF_8))
     }
+
+    @Test
+    fun parsesIndexedPlaybackWithDriveReadyBeforeYoutube() {
+        val items = GatewayJsonParser.playbackTimeline(
+            """{"camera_id":"camera01","day":"2026-07-15","items":[{"id":"clip01","camera_id":"camera01","start_time":1000,"end_time":61000,"duration":60000,"size_bytes":1234,"motion":true,"protected":false,"local_available":false,"drive_available":true,"youtube_available":false,"youtube_video_id":null,"youtube_start_offset_seconds":0,"status":"READY","preferred_source":"DRIVE_READY","last_error":null}]}"""
+        )
+        assertEquals(1, items.size)
+        assertEquals("DRIVE_READY", items.single().preferredSource)
+        assertEquals(true, items.single().playable)
+        assertEquals(false, items.single().youtubeAvailable)
+    }
+
+    @Test
+    fun parsesYoutubeSourceWithExactOffsetAndNoReadySourceDisablesPlayback() {
+        val sources = GatewayJsonParser.playbackSources(
+            """{"item_id":"clip01","preferred_source":"YOUTUBE_READY","sources":[{"type":"YOUTUBE_READY","state":"READY","stream_url":null,"video_id":"private-video","start_offset_seconds":125,"watch_url":"https://www.youtube.com/watch?v=private-video&t=125s","requires_google_sign_in":true}]}"""
+        )
+        val unavailable = GatewayJsonParser.playbackItem(
+            """{"id":"clip02","camera_id":"camera01","start_time":1000,"end_time":61000,"duration":60000,"size_bytes":1,"motion":false,"protected":false,"local_available":false,"drive_available":false,"youtube_available":false,"youtube_video_id":null,"youtube_start_offset_seconds":0,"status":"PROCESSING","preferred_source":null,"last_error":null}"""
+        )
+        assertEquals(125, sources.sources.single().startOffsetSeconds)
+        assertEquals(true, sources.sources.single().requiresGoogleSignIn)
+        assertEquals(false, unavailable.playable)
+    }
 }

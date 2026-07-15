@@ -10,9 +10,10 @@ import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.HttpGatewayApi
 import com.banupham.appviewcamera.viewer.api.GoogleDriveAccount
 import com.banupham.appviewcamera.viewer.api.GoogleDriveMutation
-import com.banupham.appviewcamera.viewer.api.RecordingClip
 import com.banupham.appviewcamera.viewer.api.RecordingStatus
 import com.banupham.appviewcamera.viewer.api.StorageSummary
+import com.banupham.appviewcamera.viewer.api.PlaybackDay
+import com.banupham.appviewcamera.viewer.api.PlaybackItem
 import com.banupham.appviewcamera.viewer.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.settings.GatewayConfigStore
@@ -24,6 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.util.Locale
+import java.text.SimpleDateFormat
 import java.io.IOException
 
 data class ViewerUiState(
@@ -34,8 +37,9 @@ data class ViewerUiState(
     val drives: List<GoogleDriveAccount> = emptyList(),
     val storageSummary: StorageSummary? = null,
     val recordingStatus: RecordingStatus? = null,
-    val recordings: List<RecordingClip> = emptyList(),
-    val selectedRecordingId: String? = null,
+    val playbackDays: List<PlaybackDay> = emptyList(),
+    val playbackItems: List<PlaybackItem> = emptyList(),
+    val selectedPlaybackItemId: String? = null,
     val playbackDayStartMs: Long = startOfToday(),
     val selectedCameraId: String? = null,
     val loading: Boolean = false,
@@ -220,12 +224,26 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun loadRecordings(cameraId: String? = _state.value.selectedCameraId) =
         launchApiAction("Đang đọc danh sách clip…") { api ->
+            if (cameraId == null) {
+                _state.update {
+                    it.copy(
+                        playbackDays = emptyList(),
+                        playbackItems = emptyList(),
+                        selectedPlaybackItemId = null,
+                        loading = false,
+                        message = "Chưa có camera để xem lại"
+                    )
+                }
+                return@launchApiAction
+            }
             val dayStart = _state.value.playbackDayStartMs
-            val clips = api.recordings(cameraId, dayStart, dayStart + DAY_MS - 1)
+            val days = api.playbackDays(cameraId)
+            val clips = api.playbackTimeline(cameraId, dayStart, dayStart + DAY_MS)
             _state.update { current ->
                 current.copy(
-                    recordings = clips,
-                    selectedRecordingId = current.selectedRecordingId?.takeIf { id -> clips.any { it.id == id } }
+                    playbackDays = days,
+                    playbackItems = clips,
+                    selectedPlaybackItemId = current.selectedPlaybackItemId?.takeIf { id -> clips.any { it.id == id } }
                         ?: clips.firstOrNull()?.id,
                     loading = false,
                     message = if (clips.isEmpty()) "Chưa có clip hoàn tất" else null
@@ -237,8 +255,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { current ->
             current.copy(
                 playbackDayStartMs = current.playbackDayStartMs + deltaDays * DAY_MS,
-                selectedRecordingId = null
+                selectedPlaybackItemId = null
             )
+        }
+        loadRecordings()
+    }
+
+    fun selectPlaybackDay(day: String) {
+        val parsed = runCatching {
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }.parse(day)?.time
+                ?: error("Ngày không hợp lệ")
+        }.getOrElse { error ->
+            _state.update { it.copy(message = error.message ?: "Ngày không hợp lệ") }
+            return
+        }
+        _state.update {
+            it.copy(playbackDayStartMs = parsed, selectedPlaybackItemId = null)
         }
         loadRecordings()
     }
@@ -264,7 +296,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectRecording(recordingId: String) {
         _state.update { current ->
-            if (current.recordings.any { it.id == recordingId }) current.copy(selectedRecordingId = recordingId) else current
+            if (current.playbackItems.any { it.id == recordingId }) {
+                current.copy(selectedPlaybackItemId = recordingId)
+            } else current
         }
     }
 
@@ -272,14 +306,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         launchApiAction(if (protected) "Đang bảo vệ clip…" else "Đang bỏ bảo vệ clip…") { api ->
             api.protectRecording(recordingId, protected)
             val current = _state.value
-            val clips = api.recordings(
-                current.selectedCameraId,
+            val cameraId = current.selectedCameraId ?: return@launchApiAction
+            val clips = api.playbackTimeline(
+                cameraId,
                 current.playbackDayStartMs,
-                current.playbackDayStartMs + DAY_MS - 1
+                current.playbackDayStartMs + DAY_MS
             )
             _state.update {
                 it.copy(
-                    recordings = clips,
+                    playbackItems = clips,
                     loading = false,
                     message = if (protected) "Clip đã được bảo vệ" else "Đã bỏ bảo vệ clip"
                 )

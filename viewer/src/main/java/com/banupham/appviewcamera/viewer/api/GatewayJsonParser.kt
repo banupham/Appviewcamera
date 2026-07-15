@@ -165,6 +165,80 @@ object GatewayJsonParser {
         }
     }
 
+    fun playbackDays(payload: String): List<PlaybackDay> {
+        val array = JSONObject(payload).getJSONArray("days")
+        return buildList {
+            repeat(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                add(
+                    PlaybackDay(
+                        day = item.getString("day"),
+                        itemCount = item.optInt("item_count", 0),
+                        firstStartTime = item.optionalLong("first_start_time"),
+                        lastEndTime = item.optionalLong("last_end_time")
+                    )
+                )
+            }
+        }
+    }
+
+    fun playbackTimeline(payload: String): List<PlaybackItem> {
+        val array = JSONObject(payload).getJSONArray("items")
+        return buildList {
+            repeat(array.length()) { index -> add(playbackItem(array.getJSONObject(index))) }
+        }
+    }
+
+    fun playbackItem(payload: String): PlaybackItem = playbackItem(JSONObject(payload))
+
+    fun playbackSources(payload: String): PlaybackSources {
+        val root = JSONObject(payload)
+        val array = root.getJSONArray("sources")
+        val sources = buildList {
+            repeat(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                add(
+                    PlaybackSource(
+                        type = item.getString("type"),
+                        state = item.optString("state", "UNAVAILABLE"),
+                        streamUrl = item.optionalString("stream_url"),
+                        videoId = item.optionalString("video_id"),
+                        startOffsetSeconds = item.optInt("start_offset_seconds", 0),
+                        watchUrl = item.optionalString("watch_url"),
+                        requiresGoogleSignIn = item.optBoolean("requires_google_sign_in", false)
+                    )
+                )
+            }
+        }
+        return PlaybackSources(
+            itemId = root.getString("item_id"),
+            preferredSource = root.optionalString("preferred_source"),
+            sources = sources
+        )
+    }
+
+    private fun playbackItem(item: JSONObject): PlaybackItem = PlaybackItem(
+        id = item.getString("id"),
+        cameraId = item.getString("camera_id"),
+        startTime = item.getLong("start_time"),
+        endTime = item.getLong("end_time"),
+        duration = item.optionalLong("duration"),
+        sizeBytes = item.optLong("size_bytes", 0),
+        motion = item.optBoolean("motion", false),
+        protected = item.optBoolean("protected", false),
+        localAvailable = item.optBoolean("local_available", false),
+        driveAvailable = item.optBoolean("drive_available", false),
+        youtubeAvailable = item.optBoolean("youtube_available", false),
+        youtubeVideoId = item.optionalString("youtube_video_id"),
+        youtubeStartOffsetSeconds = item.optInt("youtube_start_offset_seconds", 0),
+        status = item.optString("status", "UNAVAILABLE"),
+        preferredSource = item.optionalString("preferred_source"),
+        lastError = item.optionalString("last_error")
+    )
+
     private fun JSONObject.optionalLong(name: String): Long? =
         if (has(name) && !isNull(name)) getLong(name) else null
+
+    private fun JSONObject.optionalString(name: String): String? =
+        if (has(name) && !isNull(name)) getString(name).takeIf { it.isNotBlank() } else null
 }

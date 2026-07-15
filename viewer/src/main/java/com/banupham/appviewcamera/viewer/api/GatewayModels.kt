@@ -115,3 +115,47 @@ data class RecordingClip(
     val protected: Boolean,
     val motion: Boolean
 )
+
+data class PlaybackDay(
+    val day: String,
+    val itemCount: Int,
+    val firstStartTime: Long?,
+    val lastEndTime: Long?
+)
+
+data class PlaybackItem(
+    val id: String,
+    val cameraId: String,
+    val startTime: Long,
+    val endTime: Long,
+    val duration: Long?,
+    val sizeBytes: Long,
+    val motion: Boolean,
+    val protected: Boolean,
+    val localAvailable: Boolean,
+    val driveAvailable: Boolean,
+    val youtubeAvailable: Boolean,
+    val youtubeVideoId: String?,
+    val youtubeStartOffsetSeconds: Int,
+    val status: String,
+    val preferredSource: String?,
+    val lastError: String?
+) {
+    val playable: Boolean get() = preferredSource != null && status == "READY"
+}
+
+data class PlaybackSource(
+    val type: String,
+    val state: String,
+    val streamUrl: String?,
+    val videoId: String?,
+    val startOffsetSeconds: Int,
+    val watchUrl: String?,
+    val requiresGoogleSignIn: Boolean
+)
+
+data class PlaybackSources(
+    val itemId: String,
+    val preferredSource: String?,
+    val sources: List<PlaybackSource>
+)

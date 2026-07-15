@@ -139,10 +139,17 @@ class RecordingManager:
             return None
         return path
 
-    def playback_path(self, clip_id: str, drive_store: GoogleDriveStore) -> Path | None:
+    def playback_path(
+        self, clip_id: str, drive_store: GoogleDriveStore, source: str = "auto"
+    ) -> Path | None:
         local = self.clip_path(clip_id)
-        if local is not None:
+        normalized_source = source.strip().lower()
+        if normalized_source not in {"auto", "local", "drive"}:
+            raise ValueError("Playback source must be auto, local or drive")
+        if local is not None and normalized_source in {"auto", "local"}:
             return local
+        if normalized_source == "local":
+            return None
         clip = self.database.get_clip(clip_id)
         if not clip or (
             clip.get("clip_state") not in ("DRIVE_READY", "LOCAL_CACHE")

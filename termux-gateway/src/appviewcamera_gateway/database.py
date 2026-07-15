@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS recording_clips (
     remote_file_id TEXT,
     remote_size_bytes INTEGER,
     remote_verified_at_ms INTEGER,
+    youtube_state TEXT NOT NULL DEFAULT 'NOT_CONFIGURED',
+    youtube_video_id TEXT,
+    youtube_start_offset_seconds INTEGER NOT NULL DEFAULT 0,
+    youtube_updated_at_ms INTEGER,
+    youtube_last_error TEXT,
     upload_attempts INTEGER NOT NULL DEFAULT 0,
     next_retry_ms INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
@@ -106,6 +111,11 @@ class GatewayDatabase:
             "remote_file_id": "TEXT",
             "remote_size_bytes": "INTEGER",
             "remote_verified_at_ms": "INTEGER",
+            "youtube_state": "TEXT NOT NULL DEFAULT 'NOT_CONFIGURED'",
+            "youtube_video_id": "TEXT",
+            "youtube_start_offset_seconds": "INTEGER NOT NULL DEFAULT 0",
+            "youtube_updated_at_ms": "INTEGER",
+            "youtube_last_error": "TEXT",
             "upload_attempts": "INTEGER NOT NULL DEFAULT 0",
             "next_retry_ms": "INTEGER NOT NULL DEFAULT 0",
             "last_error": "TEXT",
@@ -153,6 +163,10 @@ class GatewayDatabase:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_recording_clip_state_retry "
             "ON recording_clips(clip_state, next_retry_ms, started_at_ms)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_recording_camera_day "
+            "ON recording_clips(camera_id, started_at_ms, clip_state)"
         )
 
     def connect(self) -> sqlite3.Connection:
@@ -304,6 +318,63 @@ class GatewayDatabase:
 
     def get_clip(self, clip_id: str) -> dict | None:
         with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM recording_clips WHERE id=?", (clip_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def playback_days(self, camera_id: str, limit: int = 90) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT date(started_at_ms / 1000, 'unixepoch', 'localtime') AS day, "
+                "COUNT(*) AS item_count, MIN(started_at_ms) AS first_start_time, "
+                "MAX(started_at_ms + COALESCE(duration_ms, 0)) AS last_end_time "
+                "FROM recording_clips WHERE camera_id=? AND clip_state!='RECORDING' "
+                "GROUP BY day ORDER BY day DESC LIMIT ?",
+                (camera_id, max(1, min(366, limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def playback_timeline(
+        self, camera_id: str, from_ms: int, to_ms: int, limit: int = 500
+    ) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM recording_clips WHERE camera_id=? AND clip_state!='RECORDING' "
+                "AND started_at_ms>=? AND started_at_ms<? "
+                "ORDER BY started_at_ms LIMIT ?",
+                (camera_id, from_ms, to_ms, max(1, min(1000, limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_youtube_source(
+        self,
+        clip_id: str,
+        state: str,
+        video_id: str | None = None,
+        start_offset_seconds: int = 0,
+        updated_at_ms: int | None = None,
+        error: str | None = None,
+    ) -> dict | None:
+        normalized = state.strip().upper()
+        if normalized not in {"NOT_CONFIGURED", "PENDING", "PROCESSING", "YOUTUBE_READY", "FAILED"}:
+            raise ValueError("Invalid YouTube playback state")
+        if normalized == "YOUTUBE_READY" and not (video_id or "").strip():
+            raise ValueError("youtube_video_id is required for YOUTUBE_READY")
+        with self._lock, self.connect() as connection:
+            connection.execute(
+                "UPDATE recording_clips SET youtube_state=?, youtube_video_id=?, "
+                "youtube_start_offset_seconds=?, youtube_updated_at_ms=?, youtube_last_error=? "
+                "WHERE id=?",
+                (
+                    normalized,
+                    (video_id or "").strip() or None,
+                    max(0, int(start_offset_seconds)),
+                    updated_at_ms,
+                    error[-500:] if error else None,
+                    clip_id,
+                ),
+            )
             row = connection.execute(
                 "SELECT * FROM recording_clips WHERE id=?", (clip_id,)
             ).fetchone()

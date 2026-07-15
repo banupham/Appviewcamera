@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Coroutine
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from . import __version__
 from .config import CameraStore, GatewaySettings
@@ -22,6 +22,7 @@ from .storage import GoogleDriveStore
 from .recording import RecordingManager, RecordingWorker
 from .motion import MotionMonitor
 from .drive_oauth import DriveOAuthManager
+from .playback import PlaybackIndex
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
@@ -42,6 +43,7 @@ class GatewayRuntime:
         self.drive_store = GoogleDriveStore(settings.home)
         self.drive_oauth = DriveOAuthManager(self.drive_store)
         self.recording = RecordingManager(settings, self.database)
+        self.playback = PlaybackIndex(self.database)
         self.recording_worker = RecordingWorker(
             self.recording, self.database, self.drive_store, self.camera_store.list
         )
@@ -168,6 +170,47 @@ class GatewayRouter:
                 )
                 self._await(self.runtime.mediamtx.reconfigure(), 20)
                 return 200, result
+            if method == "GET" and path == "/api/playback/days":
+                camera_id = str(query.get("camera_id", [""])[0])
+                limit = int(query.get("limit", ["90"])[0])
+                return 200, self.runtime.playback.days(camera_id, limit)
+            if method == "GET" and path == "/api/playback/timeline":
+                camera_id = str(query.get("camera_id", [""])[0])
+                day = query.get("day", [None])[0]
+                from_ms = int(query["from_ms"][0]) if "from_ms" in query else None
+                to_ms = int(query["to_ms"][0]) if "to_ms" in query else None
+                limit = int(query.get("limit", ["500"])[0])
+                return 200, self.runtime.playback.timeline(
+                    camera_id, day, from_ms, to_ms, limit
+                )
+            if path.startswith("/api/playback/items/") and method in ("GET", "HEAD"):
+                suffix = path.removeprefix("/api/playback/items/")
+                if suffix.endswith("/stream"):
+                    item_id = unquote(suffix.removesuffix("/stream"))
+                    item = self.runtime.playback.item(item_id)
+                    if item is None:
+                        return 404, {"detail": "Playback item not found"}
+                    source = str(query.get("source", ["auto"])[0]).lower()
+                    if source == "youtube":
+                        return 409, {
+                            "detail": "YouTube playback must use the indexed video ID and signed-in account",
+                            "sources_url": f"/api/playback/items/{quote(item_id, safe='')}/sources",
+                        }
+                    clip_path = self.runtime.recording.playback_path(
+                        item_id, self.runtime.drive_store, source
+                    )
+                    if clip_path is None:
+                        return 409, {
+                            "detail": f"Playback source {source} is not ready",
+                            "sources_url": f"/api/playback/items/{quote(item_id, safe='')}/sources",
+                        }
+                    return 200, FilePayload(clip_path)
+                if suffix.endswith("/sources"):
+                    item_id = unquote(suffix.removesuffix("/sources"))
+                    sources = self.runtime.playback.sources(item_id)
+                    return (200, sources) if sources is not None else (404, {"detail": "Playback item not found"})
+                item = self.runtime.playback.item(unquote(suffix))
+                return (200, item) if item is not None else (404, {"detail": "Playback item not found"})
             if method == "GET" and path == "/api/recordings":
                 self.runtime.recording.scan(self.runtime.camera_store.list())
                 camera_id = query.get("camera_id", [None])[0]

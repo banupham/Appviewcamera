@@ -124,6 +124,33 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         request("PUT", "/api/recordings/${encode(recordingId)}/protection", body)
     }
 
+    override suspend fun playbackDays(cameraId: String): List<PlaybackDay> =
+        GatewayJsonParser.playbackDays(
+            request("GET", "/api/playback/days?camera_id=${encode(cameraId)}")
+        )
+
+    override suspend fun playbackTimeline(
+        cameraId: String,
+        fromMs: Long,
+        toMs: Long
+    ): List<PlaybackItem> = GatewayJsonParser.playbackTimeline(
+        request(
+            "GET",
+            "/api/playback/timeline?camera_id=${encode(cameraId)}&from_ms=$fromMs&to_ms=$toMs",
+            readTimeoutMs = STORAGE_TIMEOUT_MS
+        )
+    )
+
+    override suspend fun playbackItem(itemId: String): PlaybackItem =
+        GatewayJsonParser.playbackItem(
+            request("GET", "/api/playback/items/${encode(itemId)}")
+        )
+
+    override suspend fun playbackSources(itemId: String): PlaybackSources =
+        GatewayJsonParser.playbackSources(
+            request("GET", "/api/playback/items/${encode(itemId)}/sources")
+        )
+
     private suspend fun request(
         method: String,
         path: String,

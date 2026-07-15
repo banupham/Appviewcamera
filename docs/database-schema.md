@@ -36,6 +36,7 @@ Database vận hành là `~/appviewcamera/data/camera_gateway.db`, bật WAL và
 
 - `discovery_candidates`: thiết bị/cổng tìm thấy trong LAN.
 - `recording_clips`: thời gian, kích thước, `clip_state`, staging/cache local, Drive remote/file ID,
+  trạng thái/video ID/offset YouTube,
   kích thước và thời gian xác minh, motion và protection. Xem migration tại
   [drive-primary-migration.md](drive-primary-migration.md).
 - `motion_events`: sự kiện ISAPI đang chờ ghép với segment fMP4.

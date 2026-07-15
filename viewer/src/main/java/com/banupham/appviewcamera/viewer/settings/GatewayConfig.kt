@@ -27,4 +27,7 @@ data class GatewayConfig(
     }
 
     fun recordingUrl(clipId: String): String = "$apiBaseUrl/api/recordings/$clipId/content"
+
+    fun playbackStreamUrl(itemId: String, source: String = "auto"): String =
+        "$apiBaseUrl/api/playback/items/$itemId/stream?source=$source"
 }

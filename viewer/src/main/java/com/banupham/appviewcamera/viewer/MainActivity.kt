@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -47,6 +48,7 @@ import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.CameraSummary
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
 import com.banupham.appviewcamera.viewer.player.PlaybackPlayer
+import com.banupham.appviewcamera.viewer.playback.PlaybackSourceSelector
 import com.banupham.appviewcamera.viewer.live.MultiCameraLiveScreen
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -141,6 +143,7 @@ private fun ViewerScreen(
                     onSelectCamera = viewModel::selectCamera,
                     onRefresh = viewModel::loadRecordings,
                     onChangeDay = viewModel::changePlaybackDay,
+                    onSelectDay = viewModel::selectPlaybackDay,
                     onToggleRecording = viewModel::setRecordingEnabled,
                     onSelectClip = viewModel::selectRecording,
                     onProtectClip = viewModel::protectRecording
@@ -176,6 +179,7 @@ private fun PlaybackScreen(
     onSelectCamera: (String) -> Unit,
     onRefresh: (String?) -> Unit,
     onChangeDay: (Int) -> Unit,
+    onSelectDay: (String) -> Unit,
     onToggleRecording: (Boolean, Int) -> Unit,
     onSelectClip: (String) -> Unit,
     onProtectClip: (String, Boolean) -> Unit
@@ -184,7 +188,10 @@ private fun PlaybackScreen(
     LaunchedEffect(cameraId) {
         if (state.config.validate().isSuccess) onRefresh(cameraId)
     }
-    val selectedClip = state.recordings.firstOrNull { it.id == state.selectedRecordingId }
+    val selectedClip = state.playbackItems.firstOrNull { it.id == state.selectedPlaybackItemId }
+    val uriHandler = LocalUriHandler.current
+    var failedPlaybackItemId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(selectedClip?.id) { failedPlaybackItemId = null }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             val recording = state.recordingStatus
@@ -219,6 +226,19 @@ private fun PlaybackScreen(
                 OutlinedButton(onClick = { onChangeDay(1) }) { Text("Ngày sau") }
             }
         }
+        if (state.playbackDays.isNotEmpty()) {
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(state.playbackDays, key = { it.day }) { day ->
+                        FilterChip(
+                            selected = day.day == formatPlaybackApiDay(state.playbackDayStartMs),
+                            onClick = { onSelectDay(day.day) },
+                            label = { Text("${day.day} (${day.itemCount})") }
+                        )
+                    }
+                }
+            }
+        }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.cameras, key = { it.id }) { camera ->
@@ -233,29 +253,60 @@ private fun PlaybackScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = { onRefresh(cameraId) }) { Text("Làm mới clip") }
-                Text("${state.recordings.size} clip")
+                Text("${state.playbackItems.size} clip")
             }
         }
         selectedClip?.let { clip ->
-            item {
-                PlaybackPlayer(
-                    url = state.config.recordingUrl(clip.id),
-                    apiToken = state.config.apiToken
-                )
+            val effectiveSource = PlaybackSourceSelector.select(
+                clip, primaryFailed = failedPlaybackItemId == clip.id
+            )
+            when (effectiveSource) {
+                "LOCAL_CACHE", "DRIVE_READY" -> item {
+                    PlaybackPlayer(
+                        url = state.config.playbackStreamUrl(
+                            clip.id,
+                            if (effectiveSource == "LOCAL_CACHE") "local" else "drive"
+                        ),
+                        apiToken = state.config.apiToken,
+                        onPlaybackError = {
+                            if (clip.youtubeAvailable) failedPlaybackItemId = clip.id
+                        }
+                    )
+                }
+                "YOUTUBE_READY" -> item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Bản YouTube Private sẵn sàng")
+                            Text("Cần đăng nhập đúng tài khoản Google được cấp quyền.")
+                            Button(onClick = {
+                                val videoId = clip.youtubeVideoId ?: return@Button
+                                uriHandler.openUri(
+                                    "https://www.youtube.com/watch?v=$videoId&t=${clip.youtubeStartOffsetSeconds}s"
+                                )
+                            }) { Text("Mở YouTube đúng thời điểm") }
+                        }
+                    }
+                }
             }
         }
-        if (state.recordings.isEmpty()) {
+        if (state.playbackItems.isEmpty()) {
             item { Text("Chưa có clip hoàn tất cho camera này.") }
         }
-        items(state.recordings, key = { it.id }) { clip ->
+        items(state.playbackItems, key = { it.id }) { clip ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(formatRecordingTime(clip.startedAtMs), style = MaterialTheme.typography.titleMedium)
-                    Text("${formatDuration(clip.durationMs)} • ${formatBytes(clip.sizeBytes)}")
-                    Text(uploadStateText(clip.uploadState, clip.localState))
+                    Text(formatRecordingTime(clip.startTime), style = MaterialTheme.typography.titleMedium)
+                    Text("${formatDuration(clip.duration)} • ${formatBytes(clip.sizeBytes)}")
+                    Text(playbackSourceText(clip))
                     if (clip.motion) Text("Có chuyển động • tự động bảo vệ")
                     clip.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    OutlinedButton(onClick = { onSelectClip(clip.id) }) { Text("Phát clip") }
+                    if (clip.playable) {
+                        OutlinedButton(onClick = { onSelectClip(clip.id) }) {
+                            Text(if (clip.preferredSource == "YOUTUBE_READY") "Xem bản YouTube" else "Phát clip")
+                        }
+                    } else {
+                        Text("Chưa có nguồn sẵn sàng", color = MaterialTheme.colorScheme.error)
+                    }
                     TextButton(onClick = { onProtectClip(clip.id, !clip.protected) }) {
                         Text(if (clip.protected) "Bỏ bảo vệ" else "Bảo vệ clip")
                     }
@@ -270,6 +321,17 @@ private fun formatRecordingTime(value: Long): String =
 
 private fun formatRecordingDay(value: Long): String =
     SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(value))
+
+private fun formatPlaybackApiDay(value: Long): String =
+    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(value))
+
+private fun playbackSourceText(clip: com.banupham.appviewcamera.viewer.api.PlaybackItem): String = when {
+    clip.localAvailable -> "Sẵn sàng từ cache Gateway"
+    clip.driveAvailable -> "Sẵn sàng từ Google Drive"
+    clip.youtubeAvailable -> "Sẵn sàng từ YouTube Private"
+    clip.status == "PROCESSING" -> "Đang xử lý nguồn lưu trữ"
+    else -> "Không có nguồn phát sẵn sàng"
+}
 
 private fun uploadStateText(uploadState: String, localState: String): String = when (uploadState) {
     "UPLOADED" -> if (localState == "AVAILABLE") "Đã lưu Drive • còn bản trên máy" else "Đã lưu Drive • phát qua bộ nhớ đệm"
