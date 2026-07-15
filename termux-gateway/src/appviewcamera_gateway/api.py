@@ -151,6 +151,15 @@ class GatewayRouter:
                 if clip_path is None:
                     return 404, {"detail": "Không tìm thấy clip"}
                 return 200, FilePayload(clip_path)
+            if path.startswith("/api/recordings/") and path.endswith("/protection") and method == "PUT":
+                clip_id = unquote(path.removeprefix("/api/recordings/").removesuffix("/protection"))
+                request = json.loads(body.decode("utf-8"))
+                clip = self.runtime.database.set_clip_protected(
+                    clip_id, bool(request.get("protected", False))
+                )
+                if clip is None:
+                    return 404, {"detail": "Không tìm thấy clip"}
+                return 200, clip
             if method == "GET" and path == "/api/discovery/candidates":
                 return 200, self.runtime.database.list_candidates()
             if method == "POST" and path == "/api/discovery/scan":
@@ -179,8 +188,15 @@ class GatewayRouter:
                 if suffix.endswith("/refresh") and method == "POST":
                     remote_id = unquote(suffix.removesuffix("/refresh"))
                     return 200, self.runtime.drive_store.refresh(remote_id)
+                if suffix.endswith("/activate") and method == "POST":
+                    remote_id = unquote(suffix.removesuffix("/activate"))
+                    return 200, self.runtime.drive_store.activate(remote_id)
                 remote_id = unquote(suffix)
                 if method == "DELETE":
+                    if self.runtime.database.remote_clip_count(remote_id) > 0:
+                        return 409, {
+                            "detail": "Drive này đang chứa clip đã lưu; không thể xóa cấu hình"
+                        }
                     if not self.runtime.drive_store.delete(remote_id):
                         return 404, {"detail": "Không tìm thấy tài khoản Google Drive"}
                     return 200, {"deleted": True}

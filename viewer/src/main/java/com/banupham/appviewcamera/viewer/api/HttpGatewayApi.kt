@@ -66,6 +66,11 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         request("DELETE", "/api/storage/drives/${encode(driveId)}")
     }
 
+    override suspend fun activateDrive(driveId: String): GoogleDriveAccount =
+        GatewayJsonParser.drives(
+            "[${request("POST", "/api/storage/drives/${encode(driveId)}/activate")}]"
+        ).single()
+
     override suspend fun recordingStatus(): RecordingStatus =
         GatewayJsonParser.recordingStatus(request("GET", "/api/recording"))
 
@@ -85,6 +90,11 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         }
         val suffix = parameters.takeIf { it.isNotEmpty() }?.joinToString("&", prefix = "?").orEmpty()
         return GatewayJsonParser.recordings(request("GET", "/api/recordings$suffix", readTimeoutMs = STORAGE_TIMEOUT_MS))
+    }
+
+    override suspend fun protectRecording(recordingId: String, protected: Boolean) {
+        val body = JSONObject().put("protected", protected).toString()
+        request("PUT", "/api/recordings/${encode(recordingId)}/protection", body)
     }
 
     private suspend fun request(

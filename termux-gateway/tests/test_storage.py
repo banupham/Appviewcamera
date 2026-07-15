@@ -77,3 +77,14 @@ def test_remote_path_cannot_escape_drive_root(gateway_home):
         assert False, "unsafe path must be rejected"
     except ValueError:
         pass
+
+
+def test_drive_can_be_activated_and_switches_when_quota_is_high(gateway_home):
+    store = GoogleDriveStore(gateway_home)
+    store.add("drive01", "Drive 01", TOKEN)
+    store.add("drive02", "Drive 02", TOKEN)
+
+    selected = store.activate("drive02")
+
+    assert selected["active"] is True
+    assert next(item for item in store.list() if item["id"] == "drive01")["active"] is False

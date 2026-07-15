@@ -198,11 +198,36 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
+    fun activateDrive(driveId: String) = launchApiAction("Đang chuyển Google Drive…") { api ->
+        api.activateDrive(driveId)
+        _state.update {
+            it.copy(drives = api.drives(), loading = false, message = "Đã chọn tài khoản Drive")
+        }
+    }
+
     fun selectRecording(recordingId: String) {
         _state.update { current ->
             if (current.recordings.any { it.id == recordingId }) current.copy(selectedRecordingId = recordingId) else current
         }
     }
+
+    fun protectRecording(recordingId: String, protected: Boolean) =
+        launchApiAction(if (protected) "Đang bảo vệ clip…" else "Đang bỏ bảo vệ clip…") { api ->
+            api.protectRecording(recordingId, protected)
+            val current = _state.value
+            val clips = api.recordings(
+                current.selectedCameraId,
+                current.playbackDayStartMs,
+                current.playbackDayStartMs + DAY_MS - 1
+            )
+            _state.update {
+                it.copy(
+                    recordings = clips,
+                    loading = false,
+                    message = if (protected) "Clip đã được bảo vệ" else "Đã bỏ bảo vệ clip"
+                )
+            }
+        }
 
     private fun launchApiAction(progress: String, block: suspend (HttpGatewayApi) -> Unit) {
         val config = _state.value.config.validate().getOrElse { error ->

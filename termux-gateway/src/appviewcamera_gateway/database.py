@@ -257,3 +257,23 @@ class GatewayDatabase:
                 "UPDATE recording_clips SET local_state='MISSING' WHERE id=?",
                 (clip_id,),
             )
+
+    def set_clip_protected(self, clip_id: str, protected: bool) -> dict | None:
+        with self._lock, self.connect() as connection:
+            connection.execute(
+                "UPDATE recording_clips SET protected=? WHERE id=?",
+                (1 if protected else 0, clip_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM recording_clips WHERE id=?", (clip_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def remote_clip_count(self, remote_id: str) -> int:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM recording_clips "
+                "WHERE remote_id=? AND upload_state='UPLOADED'",
+                (remote_id,),
+            ).fetchone()
+        return int(row["count"])

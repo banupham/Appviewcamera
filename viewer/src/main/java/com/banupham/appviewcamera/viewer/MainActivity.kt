@@ -96,7 +96,8 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
                     onRefresh = viewModel::loadRecordings,
                     onChangeDay = viewModel::changePlaybackDay,
                     onToggleRecording = viewModel::setRecordingEnabled,
-                    onSelectClip = viewModel::selectRecording
+                    onSelectClip = viewModel::selectRecording,
+                    onProtectClip = viewModel::protectRecording
                 )
                 ViewerSection.DEVICES -> DevicesScreen(
                     state = state,
@@ -109,6 +110,7 @@ private fun ViewerScreen(viewModel: ViewerViewModel = viewModel()) {
                     state = state,
                     onAdd = viewModel::addDrive,
                     onRefresh = viewModel::refreshDrive,
+                    onActivate = viewModel::activateDrive,
                     onDelete = viewModel::deleteDrive
                 )
                 ViewerSection.SETTINGS -> SettingsScreen(state, viewModel::saveConfig, viewModel::refresh)
@@ -124,7 +126,8 @@ private fun PlaybackScreen(
     onRefresh: (String?) -> Unit,
     onChangeDay: (Int) -> Unit,
     onToggleRecording: (Boolean, Int) -> Unit,
-    onSelectClip: (String) -> Unit
+    onSelectClip: (String) -> Unit,
+    onProtectClip: (String, Boolean) -> Unit
 ) {
     val cameraId = state.selectedCameraId
     LaunchedEffect(cameraId) {
@@ -201,6 +204,9 @@ private fun PlaybackScreen(
                     Text(uploadStateText(clip.uploadState, clip.localState))
                     clip.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     OutlinedButton(onClick = { onSelectClip(clip.id) }) { Text("Phát clip") }
+                    TextButton(onClick = { onProtectClip(clip.id, !clip.protected) }) {
+                        Text(if (clip.protected) "Bỏ bảo vệ" else "Bảo vệ clip")
+                    }
                 }
             }
         }
@@ -231,6 +237,7 @@ private fun StorageScreen(
     state: ViewerUiState,
     onAdd: (GoogleDriveMutation) -> Unit,
     onRefresh: (String) -> Unit,
+    onActivate: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
@@ -259,6 +266,9 @@ private fun StorageScreen(
                     drive.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onRefresh(drive.id) }) { Text("Kiểm tra") }
+                        if (!drive.active) {
+                            OutlinedButton(onClick = { onActivate(drive.id) }) { Text("Sử dụng") }
+                        }
                         TextButton(onClick = { onDelete(drive.id) }) { Text("Xóa") }
                     }
                 }

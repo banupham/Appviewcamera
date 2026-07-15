@@ -71,7 +71,7 @@ def test_worker_uploads_pending_clip_and_marks_verified(gateway_home, monkeypatc
     class FakeDrive:
         uploaded = []
 
-        def active_account(self):
+        def upload_account(self):
             return {"id": "drive01"}
 
         def remote_root(self):

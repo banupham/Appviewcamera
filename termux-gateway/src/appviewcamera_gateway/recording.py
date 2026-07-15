@@ -229,7 +229,7 @@ class RecordingWorker:
 
     def run_once(self) -> None:
         self.manager.scan(self.camera_provider())
-        account = self.drive_store.active_account()
+        account = self.drive_store.upload_account()
         if account:
             pending = self.database.pending_clips(int(time.time() * 1000), limit=1)
             if pending:

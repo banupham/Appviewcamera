@@ -132,6 +132,45 @@ class GoogleDriveStore:
             next((account for account in accounts if account["configured"]), None),
         )
 
+    def upload_account(self) -> dict[str, Any] | None:
+        accounts = [account for account in self.list() if account["configured"]]
+        if not accounts:
+            return None
+        active = next((account for account in accounts if account["active"]), accounts[0])
+        policy = self._read_metadata().get("policy", {})
+        threshold = max(1, min(100, int(policy.get("switch_at_percent", 90))))
+        quota = active.get("quota") or {}
+        total = int(quota.get("total") or 0)
+        used = int(quota.get("used") or 0)
+        should_switch = active.get("status") == "ERROR" or (
+            total > 0 and used * 100 >= total * threshold
+        )
+        if should_switch:
+            alternative = next(
+                (
+                    account for account in accounts
+                    if account["id"] != active["id"] and account["status"] != "ERROR"
+                ),
+                None,
+            )
+            if alternative:
+                return self.activate(str(alternative["id"]))
+        return active
+
+    def activate(self, remote_id: str) -> dict[str, Any]:
+        normalized_id = self._require_remote(remote_id)
+        with self._lock:
+            raw = self._read_metadata()
+            selected = None
+            for account in raw["accounts"]:
+                account["active"] = account.get("id") == normalized_id
+                if account["active"]:
+                    selected = account
+            if selected is None:
+                raise ValueError("Không tìm thấy tài khoản Google Drive")
+            _atomic_json(self.metadata_path, raw)
+            return self._public_account(selected, {normalized_id})
+
     def retry_seconds(self) -> list[int]:
         policy = self._read_metadata().get("policy", {})
         raw = policy.get("retry_seconds", [60, 300, 900, 3600])

@@ -82,3 +82,31 @@ def test_recording_can_be_enabled_through_api(gateway_home):
         assert updated["local_retention_minutes"] == 30
     finally:
         loop.close()
+
+
+def test_recording_protection_endpoint(gateway_home):
+    router, loop = make_router(gateway_home)
+    headers = "Bearer test-token"
+    database = router.runtime.database
+    database.upsert_clip(
+        {
+            "id": "clip01",
+            "camera_id": "camera01",
+            "relative_path": "camera01/clip.mp4",
+            "started_at_ms": 1,
+            "duration_ms": 1000,
+            "size_bytes": 10,
+            "modified_ns": 1,
+        }
+    )
+    try:
+        code, clip = router.route(
+            "PUT",
+            "/api/recordings/clip01/protection",
+            headers,
+            json.dumps({"protected": True}).encode(),
+        )
+        assert code == 200
+        assert clip["protected"] == 1
+    finally:
+        loop.close()
