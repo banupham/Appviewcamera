@@ -204,6 +204,33 @@ class GoogleDriveStore:
                 quota["free"] = max(0, int(quota["free"]) - max(0, size_bytes))
             _atomic_json(self.metadata_path, raw)
 
+    def account_file_deleted(self, remote_id: str, size_bytes: int) -> None:
+        with self._lock:
+            raw = self._read_metadata()
+            account = next(
+                (item for item in raw["accounts"] if item.get("id") == remote_id), None
+            )
+            if not account or not isinstance(account.get("quota"), dict):
+                return
+            quota = account["quota"]
+            amount = max(0, size_bytes)
+            if quota.get("used") is not None:
+                quota["used"] = max(0, int(quota["used"]) - amount)
+            if quota.get("free") is not None:
+                free = int(quota["free"]) + amount
+                quota["free"] = min(int(quota.get("total") or free), free)
+            _atomic_json(self.metadata_path, raw)
+
+    def retention_policy(self) -> dict[str, int]:
+        policy = self._read_metadata().get("policy", {})
+        start = max(50, min(99, int(policy.get("cleanup_start_percent", 90))))
+        target = max(10, min(start - 1, int(policy.get("cleanup_target_percent", 80))))
+        return {
+            "cleanup_start_percent": start,
+            "cleanup_target_percent": target,
+            "minimum_retention_days": max(0, int(policy.get("minimum_retention_days", 7))),
+        }
+
     def summary(self, statistics: dict[str, Any]) -> dict[str, Any]:
         accounts = self.list()
         quotas = [account["quota"] for account in accounts if account.get("quota")]
@@ -262,6 +289,16 @@ class GoogleDriveStore:
             temporary.replace(local_path)
         finally:
             temporary.unlink(missing_ok=True)
+
+    def delete_file(self, remote_id: str, remote_path: str) -> None:
+        normalized_id = self._require_remote(remote_id)
+        safe_path = self._safe_remote_path(remote_path)
+        completed = self._run_rclone(
+            "deletefile", f"{normalized_id}:{safe_path}", "--retries", "2",
+            "--low-level-retries", "3", timeout=180,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(self._rclone_error(completed))
 
     def remote_stat(self, remote_id: str, remote_path: str) -> dict[str, Any]:
         normalized_id = self._require_remote(remote_id)

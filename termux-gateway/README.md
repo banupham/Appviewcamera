@@ -101,11 +101,23 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 
 Viewer sẽ mở relay tại `rtsp://IP_TAILSCALE_GATEWAY:8554/camera01`.
 
-## Giới hạn MVP
+## Ghi hình, Drive và xem lại
+
+- Bật ghi hình trong tab `Xem lại`; MediaMTX tạo segment fMP4 60 giây, không transcoding.
+- Gateway lập chỉ mục SQLite, upload lên Drive đang dùng và xác minh kích thước trước khi đánh dấu thành công.
+- Khi mất Internet, clip còn nguyên trên máy và hàng đợi tự thử lại sau 1, 5, 15 rồi 60 phút.
+- Bản local chỉ được dọn sau khi upload đã xác minh; clip `Bảo vệ` không bị dọn tự động.
+- Drive đạt 90% sẽ chuyển sang Drive khác. Retention chỉ xóa clip thường cũ hơn 7 ngày và dọn dần về 80%.
+- Viewer chọn camera/ngày và phát clip local; nếu chỉ còn trên Drive, Gateway tải vào cache rồi phát bằng HTTP Range.
+- Camera Hikvision bật `motion_enabled` dùng ISAPI port 80 để đánh dấu và bảo vệ clip chuyển động.
+
+## Giới hạn hiện tại
 
 - Android có thể chặn multicast, vì vậy ONVIF có thể không thấy camera; quét TCP subnet vẫn chạy.
 - Binary MediaMTX Linux ARM64 phải được thử trên điện thoại đích. `doctor.sh` xác nhận file và
   bước tương tác tiếp theo sẽ xác nhận process/RTSP thật.
 - `secrets.env` nằm trong sandbox Termux và không phải Android Keystore. Mã hóa yêu cầu mật khẩu
   sẽ mâu thuẫn với tự khởi động không cần người dùng sau reboot.
-- Ghi clip, motion detection và upload rclone chưa được tuyên bố hoạt động ở MVP Giai đoạn 3.
+- Motion tự động hiện dùng sự kiện Hikvision ISAPI; camera hãng khác vẫn ghi liên tục và có thể bảo vệ clip thủ công.
+- OAuth hiện nhận JSON token do `rclone authorize` tạo; Gateway không gửi token trở lại Viewer.
+- Cần kiểm thử thực tế chuỗi mất mạng → có mạng → upload → phát lại Drive trước khi coi là bản phát hành ổn định.

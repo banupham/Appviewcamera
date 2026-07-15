@@ -5,6 +5,7 @@ import logging
 import os
 import signal
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
 
 from .api import GatewayHttpServer, GatewayRouter, create_runtime
 
@@ -19,7 +20,14 @@ async def run() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[logging.FileHandler(log_dir / "gateway.log", encoding="utf-8"), logging.StreamHandler()],
+        handlers=[
+            RotatingFileHandler(
+                log_dir / "gateway.log",
+                maxBytes=5 * 1024 * 1024,
+                backupCount=4,
+                encoding="utf-8",
+            )
+        ],
     )
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()

@@ -199,6 +199,7 @@ class RecordingWorker:
         self.camera_provider = camera_provider
         self.task: asyncio.Task | None = None
         self.last_error: str | None = None
+        self.cleanup_remotes: set[str] = set()
 
     def start(self) -> None:
         self.database.reset_interrupted_uploads()
@@ -236,6 +237,7 @@ class RecordingWorker:
             if pending:
                 self._upload(pending[0], str(account["id"]))
         self._apply_retention()
+        self._apply_remote_retention()
 
     def _upload(self, clip: dict, remote_id: str) -> None:
         local_path = self.manager.clip_path(str(clip["id"]))
@@ -269,3 +271,34 @@ class RecordingWorker:
                     LOGGER.warning("Cannot remove uploaded clip %s: %s", path, error)
                     continue
             self.database.mark_local_missing(str(clip["id"]))
+
+    def _apply_remote_retention(self) -> None:
+        policy = self.drive_store.retention_policy()
+        now_ms = int(time.time() * 1000)
+        before_ms = now_ms - policy["minimum_retention_days"] * 86_400_000
+        for account in self.drive_store.list():
+            remote_id = str(account["id"])
+            quota = account.get("quota") or {}
+            total = int(quota.get("total") or 0)
+            used = int(quota.get("used") or 0)
+            if total <= 0:
+                continue
+            if used * 100 >= total * policy["cleanup_start_percent"]:
+                self.cleanup_remotes.add(remote_id)
+            if remote_id not in self.cleanup_remotes:
+                continue
+            if used * 100 <= total * policy["cleanup_target_percent"]:
+                self.cleanup_remotes.discard(remote_id)
+                continue
+            candidates = self.database.remote_cleanup_candidates(
+                remote_id, before_ms, limit=1
+            )
+            if not candidates:
+                continue
+            clip = candidates[0]
+            self.drive_store.delete_file(remote_id, str(clip["remote_path"]))
+            local = self.manager.clip_path(str(clip["id"]))
+            if local is not None:
+                local.unlink(missing_ok=True)
+            self.database.record_deleted_clip(clip, "DRIVE_STORAGE_PRESSURE", now_ms)
+            self.drive_store.account_file_deleted(remote_id, int(clip["size_bytes"]))

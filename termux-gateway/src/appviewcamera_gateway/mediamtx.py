@@ -55,7 +55,7 @@ def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> di
                 "recordDeleteAfter": "0s",
             }
     return {
-        "logLevel": "info",
+        "logLevel": "warn",
         "rtsp": True,
         "rtspAddress": f":{settings.mediamtx_rtsp_port}",
         "rtmp": False,

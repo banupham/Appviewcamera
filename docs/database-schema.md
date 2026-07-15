@@ -29,3 +29,14 @@ Database Gateway: `camera_gateway.db` (Room, schema version 1).
 | `createdAt` | INTEGER | Unix epoch milliseconds |
 
 Index: unique `relayPath`, `enabled`, `createdAt`.
+
+## SQLite của Termux Gateway
+
+Database vận hành là `~/appviewcamera/data/camera_gateway.db`, bật WAL và tự migrate khi cập nhật.
+
+- `discovery_candidates`: thiết bị/cổng tìm thấy trong LAN.
+- `recording_clips`: thời gian, kích thước, đường dẫn local, trạng thái upload/retry, Drive/path từ xa, motion và protection.
+- `motion_events`: sự kiện ISAPI đang chờ ghép với segment fMP4.
+- `deletion_history`: lịch sử clip bị retention xóa, gồm lý do, Drive, kích thước và thời điểm.
+
+Index chính: `(camera_id, started_at_ms DESC)`, `relative_path UNIQUE`, và `(processed, detected_at_ms)` cho motion. Viewer luôn tìm clip theo SQLite; không quét Google Drive khi chọn ngày.

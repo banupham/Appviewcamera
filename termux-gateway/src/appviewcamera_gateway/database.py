@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS motion_events (
 );
 CREATE INDEX IF NOT EXISTS idx_motion_events_pending
 ON motion_events(processed, detected_at_ms);
+CREATE TABLE IF NOT EXISTS deletion_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clip_id TEXT NOT NULL,
+    camera_id TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    remote_id TEXT,
+    reason TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    deleted_at_ms INTEGER NOT NULL
+);
 """
 
 
@@ -334,3 +344,27 @@ class GatewayDatabase:
                 (now_ms - post_ms - 120_000,),
             )
         return changed
+
+    def remote_cleanup_candidates(
+        self, remote_id: str, before_ms: int, limit: int = 20
+    ) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM recording_clips WHERE remote_id=? "
+                "AND upload_state='UPLOADED' AND protected=0 AND started_at_ms<=? "
+                "ORDER BY started_at_ms LIMIT ?",
+                (remote_id, before_ms, max(1, min(100, limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def record_deleted_clip(self, clip: dict, reason: str, deleted_at_ms: int) -> None:
+        with self._lock, self.connect() as connection:
+            connection.execute(
+                "INSERT INTO deletion_history(clip_id, camera_id, relative_path, remote_id, "
+                "reason, size_bytes, deleted_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    clip["id"], clip["camera_id"], clip["relative_path"],
+                    clip.get("remote_id"), reason, clip["size_bytes"], deleted_at_ms,
+                ),
+            )
+            connection.execute("DELETE FROM recording_clips WHERE id=?", (clip["id"],))

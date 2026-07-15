@@ -86,6 +86,12 @@ def test_worker_uploads_pending_clip_and_marks_verified(gateway_home, monkeypatc
         def retry_seconds(self):
             return [60]
 
+        def retention_policy(self):
+            return {"cleanup_start_percent": 90, "cleanup_target_percent": 80, "minimum_retention_days": 7}
+
+        def list(self):
+            return []
+
     drive = FakeDrive()
     worker = RecordingWorker(manager, database, drive, lambda: [{"id": "camera01"}])
     worker.run_once()
@@ -147,3 +153,27 @@ def test_motion_event_marks_overlapping_clip_as_protected(gateway_home):
     clip = database.get_clip("motion-clip")
     assert clip["motion"] == 1
     assert clip["protected"] == 1
+
+
+def test_drive_cleanup_never_selects_protected_clip(gateway_home):
+    settings = GatewaySettings.load(gateway_home)
+    database = GatewayDatabase(settings.database_path)
+    for clip_id, protected in (("normal", False), ("locked", True)):
+        database.upsert_clip(
+            {
+                "id": clip_id,
+                "camera_id": "camera01",
+                "relative_path": f"camera01/{clip_id}.mp4",
+                "started_at_ms": 1,
+                "duration_ms": 1000,
+                "size_bytes": 10,
+                "modified_ns": 1,
+            }
+        )
+        database.mark_uploading(clip_id, "drive01", f"CameraBackup/{clip_id}.mp4")
+        database.mark_uploaded(clip_id, 1)
+        database.set_clip_protected(clip_id, protected)
+
+    candidates = database.remote_cleanup_candidates("drive01", 10_000)
+
+    assert [item["id"] for item in candidates] == ["normal"]

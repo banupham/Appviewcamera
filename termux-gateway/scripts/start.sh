@@ -17,6 +17,9 @@ fi
 export APPVIEWCAMERA_HOME="$APP_HOME"
 export RCLONE_CONFIG="$APP_HOME/config/rclone.conf"
 export PYTHONPATH="$APP_HOME/src"
+if [ -f "$APP_HOME/logs/launcher.log" ] && [ "$(wc -c < "$APP_HOME/logs/launcher.log")" -gt 5242880 ]; then
+  mv -f "$APP_HOME/logs/launcher.log" "$APP_HOME/logs/launcher.log.1"
+fi
 nohup python -m appviewcamera_gateway >> "$APP_HOME/logs/launcher.log" 2>&1 &
 PID=$!
 printf '%s\n' "$PID" > "$PID_FILE"
