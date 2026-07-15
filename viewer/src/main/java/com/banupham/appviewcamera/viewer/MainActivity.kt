@@ -202,6 +202,7 @@ private fun PlaybackScreen(
                     Text(formatRecordingTime(clip.startedAtMs), style = MaterialTheme.typography.titleMedium)
                     Text("${formatDuration(clip.durationMs)} • ${formatBytes(clip.sizeBytes)}")
                     Text(uploadStateText(clip.uploadState, clip.localState))
+                    if (clip.motion) Text("Có chuyển động • tự động bảo vệ")
                     clip.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     OutlinedButton(onClick = { onSelectClip(clip.id) }) { Text("Phát clip") }
                     TextButton(onClick = { onProtectClip(clip.id, !clip.protected) }) {

@@ -124,3 +124,26 @@ def test_playback_downloads_uploaded_clip_when_local_file_is_gone(gateway_home, 
 
     assert playback is not None
     assert playback.read_bytes() == b"downloaded-mp4"
+
+
+def test_motion_event_marks_overlapping_clip_as_protected(gateway_home):
+    settings = GatewaySettings.load(gateway_home)
+    database = GatewayDatabase(settings.database_path)
+    database.upsert_clip(
+        {
+            "id": "motion-clip",
+            "camera_id": "camera01",
+            "relative_path": "camera01/motion.mp4",
+            "started_at_ms": 100_000,
+            "duration_ms": 60_000,
+            "size_bytes": 100,
+            "modified_ns": 1,
+        }
+    )
+    database.record_motion_event("camera01", 120_000)
+
+    database.apply_motion_events(121_000)
+
+    clip = database.get_clip("motion-clip")
+    assert clip["motion"] == 1
+    assert clip["protected"] == 1

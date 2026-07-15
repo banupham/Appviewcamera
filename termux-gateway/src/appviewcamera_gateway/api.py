@@ -20,6 +20,7 @@ from .discovery import discover_cameras
 from .mediamtx import MediaMtxSupervisor
 from .storage import GoogleDriveStore
 from .recording import RecordingManager, RecordingWorker
+from .motion import MotionMonitor
 
 
 LOGGER = logging.getLogger("appviewcamera.api")
@@ -42,6 +43,9 @@ class GatewayRuntime:
         self.recording_worker = RecordingWorker(
             self.recording, self.database, self.drive_store, self.camera_store.list
         )
+        self.motion_monitor = MotionMonitor(
+            settings, self.database, self.camera_store.list
+        )
         self.discovery_lock = asyncio.Lock()
         self.discovery_task: asyncio.Task | None = None
         self.last_discovery_error: str | None = None
@@ -49,10 +53,12 @@ class GatewayRuntime:
     async def start(self) -> None:
         await self.mediamtx.start()
         self.recording_worker.start()
+        self.motion_monitor.start()
         if self.settings.discovery_enabled:
             self.discovery_task = asyncio.create_task(self._periodic_discovery(), name="camera-discovery")
 
     async def stop(self) -> None:
+        await self.motion_monitor.stop()
         await self.recording_worker.stop()
         if self.discovery_task:
             self.discovery_task.cancel()
@@ -110,6 +116,7 @@ class GatewayRouter:
                     "discovery_running": self.runtime.discovery_lock.locked(),
                     "last_discovery_error": self.runtime.last_discovery_error,
                     "mediamtx": self.runtime.mediamtx.status(),
+                    "motion": self.runtime.motion_monitor.status(),
                 }
             if method == "GET" and path == "/api/cameras":
                 return 200, self.runtime.camera_store.list()

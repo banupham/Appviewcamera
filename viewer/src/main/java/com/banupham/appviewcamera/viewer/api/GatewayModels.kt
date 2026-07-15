@@ -97,5 +97,6 @@ data class RecordingClip(
     val localState: String,
     val uploadState: String,
     val lastError: String?,
-    val protected: Boolean
+    val protected: Boolean,
+    val motion: Boolean
 )

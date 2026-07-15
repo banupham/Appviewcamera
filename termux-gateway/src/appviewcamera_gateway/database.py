@@ -35,10 +35,19 @@ CREATE TABLE IF NOT EXISTS recording_clips (
     next_retry_ms INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
     uploaded_at_ms INTEGER,
-    protected INTEGER NOT NULL DEFAULT 0
+    protected INTEGER NOT NULL DEFAULT 0,
+    motion INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_recording_camera_time
 ON recording_clips(camera_id, started_at_ms DESC);
+CREATE TABLE IF NOT EXISTS motion_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    camera_id TEXT NOT NULL,
+    detected_at_ms INTEGER NOT NULL,
+    processed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_motion_events_pending
+ON motion_events(processed, detected_at_ms);
 """
 
 
@@ -67,6 +76,7 @@ class GatewayDatabase:
             "last_error": "TEXT",
             "uploaded_at_ms": "INTEGER",
             "protected": "INTEGER NOT NULL DEFAULT 0",
+            "motion": "INTEGER NOT NULL DEFAULT 0",
         }
         for name, declaration in migrations.items():
             if name not in columns:
@@ -170,7 +180,7 @@ class GatewayDatabase:
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT id, camera_id, started_at_ms, duration_ms, size_bytes, "
-                "local_state, upload_state, remote_id, remote_path, last_error, protected "
+                "local_state, upload_state, remote_id, remote_path, last_error, protected, motion "
                 f"FROM recording_clips{where} ORDER BY started_at_ms DESC LIMIT ?",
                 values,
             ).fetchall()
@@ -287,3 +297,40 @@ class GatewayDatabase:
                 "FROM recording_clips"
             ).fetchone()
         return dict(row)
+
+    def record_motion_event(self, camera_id: str, detected_at_ms: int) -> None:
+        with self._lock, self.connect() as connection:
+            last = connection.execute(
+                "SELECT MAX(detected_at_ms) AS value FROM motion_events WHERE camera_id=?",
+                (camera_id,),
+            ).fetchone()["value"]
+            if last is None or detected_at_ms - int(last) >= 10_000:
+                connection.execute(
+                    "INSERT INTO motion_events(camera_id, detected_at_ms) VALUES (?, ?)",
+                    (camera_id, detected_at_ms),
+                )
+
+    def apply_motion_events(self, now_ms: int, pre_ms: int = 10_000, post_ms: int = 30_000) -> int:
+        changed = 0
+        with self._lock, self.connect() as connection:
+            events = connection.execute(
+                "SELECT id, camera_id, detected_at_ms FROM motion_events WHERE processed=0"
+            ).fetchall()
+            for event in events:
+                cursor = connection.execute(
+                    "UPDATE recording_clips SET motion=1, protected=1 "
+                    "WHERE camera_id=? AND started_at_ms<=? "
+                    "AND started_at_ms+COALESCE(duration_ms, 60000)>=?",
+                    (
+                        event["camera_id"],
+                        int(event["detected_at_ms"]) + post_ms,
+                        int(event["detected_at_ms"]) - pre_ms,
+                    ),
+                )
+                changed += cursor.rowcount
+            connection.execute(
+                "UPDATE motion_events SET processed=1 "
+                "WHERE processed=0 AND detected_at_ms<?",
+                (now_ms - post_ms - 120_000,),
+            )
+        return changed

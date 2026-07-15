@@ -140,11 +140,15 @@ class CameraStore:
             "enabled": bool(camera.get("enabled", True)),
             "record_enabled": bool(camera.get("record_enabled", True)),
             "motion_enabled": bool(camera.get("motion_enabled", False)),
+            "event_port": int(camera.get("event_port", 80)),
+            "event_path": str(camera.get("event_path") or "ISAPI/Event/notification/alertStream").strip("/"),
             "audio_enabled": bool(camera.get("audio_enabled", True)),
             "secret_ref": f"CAMERA_{camera_id.upper().replace('-', '_')}_PASSWORD",
         }
         if not normalized["host"] or not normalized["main_path"]:
             raise ValueError("host và main_path là bắt buộc")
+        if not 1 <= normalized["event_port"] <= 65535:
+            raise ValueError("event_port phải nằm trong khoảng 1..65535")
         if not 1 <= normalized["port"] <= 65535:
             raise ValueError("port phải nằm trong khoảng 1..65535")
         with self._lock:

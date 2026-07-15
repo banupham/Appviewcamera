@@ -130,7 +130,8 @@ object GatewayJsonParser {
                         uploadState = item.optString("upload_state", "PENDING"),
                         lastError = item.optString("last_error")
                             .takeIf { it.isNotBlank() && it != "null" },
-                        protected = item.optBoolean("protected", false)
+                        protected = item.optBoolean("protected", false),
+                        motion = item.optBoolean("motion", false)
                     )
                 )
             }
