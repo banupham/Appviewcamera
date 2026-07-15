@@ -52,7 +52,9 @@ object GatewayJsonParser {
         return GatewayStatus(
             status = root.optString("status", "UNKNOWN"),
             mediaMtxState = root.optJSONObject("mediamtx")?.optString("state", "UNKNOWN") ?: "UNKNOWN",
-            cameraCount = root.optInt("camera_count", 0)
+            cameraCount = root.optInt("camera_count", 0),
+            gatewayId = root.optionalString("gateway_id"),
+            gatewayName = root.optionalString("gateway_name")
         )
     }
 

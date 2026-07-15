@@ -16,9 +16,11 @@ import com.banupham.appviewcamera.viewer.api.PlaybackDay
 import com.banupham.appviewcamera.viewer.api.PlaybackItem
 import com.banupham.appviewcamera.viewer.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
+import com.banupham.appviewcamera.viewer.settings.GatewayCollection
 import com.banupham.appviewcamera.viewer.settings.GatewayConfigStore
 import com.banupham.appviewcamera.viewer.settings.PairingUriParser
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +33,10 @@ import java.io.IOException
 
 data class ViewerUiState(
     val config: GatewayConfig = GatewayConfig(),
+    val gateways: List<GatewayConfig> = emptyList(),
+    val currentGatewayId: String? = null,
+    val pairingDraft: GatewayConfig? = null,
+    val pairingConflict: GatewayConfig? = null,
     val gatewayStatus: GatewayStatus? = null,
     val cameras: List<CameraSummary> = emptyList(),
     val candidates: List<DiscoveryCandidate> = emptyList(),
@@ -53,36 +59,50 @@ data class ViewerUiState(
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
     private val configStore = GatewayConfigStore(application, AndroidKeystoreCredentialCipher())
     private val _state = MutableStateFlow(
-        runCatching { ViewerUiState(config = configStore.load()) }
+        runCatching {
+            val collection = configStore.loadCollection()
+            ViewerUiState(
+                config = collection.current ?: GatewayConfig(),
+                gateways = collection.gateways,
+                currentGatewayId = collection.current?.id
+            )
+        }
             .getOrElse {
                 ViewerUiState(message = "Không đọc được cài đặt cũ; hãy cấu hình lại Gateway")
             }
     )
     val state: StateFlow<ViewerUiState> = _state.asStateFlow()
     private var refreshJob: Job? = null
+    private var actionJob: Job? = null
 
     init {
         if (_state.value.config.validate().isSuccess) refresh()
     }
 
-    fun saveConfig(host: String, apiPort: String, rtspPort: String, token: String) {
+    fun saveConfig(name: String, host: String, apiPort: String, rtspPort: String, token: String) {
+        val base = _state.value.pairingDraft ?: _state.value.config
         val config = GatewayConfig(
             host = host,
             apiPort = apiPort.toIntOrNull() ?: -1,
             rtspPort = rtspPort.toIntOrNull() ?: -1,
-            apiToken = token
+            apiToken = token,
+            id = base.id,
+            name = name,
+            lastSeen = base.lastSeen,
+            status = base.status,
+            cameraCount = base.cameraCount,
+            isDefault = base.isDefault
         )
         val validated = config.validate().getOrElse { error ->
             _state.update { it.copy(message = error.message ?: "Cấu hình không hợp lệ") }
             return
         }
-        runCatching { configStore.save(validated) }
+        val collection = runCatching { configStore.save(validated) }
             .onFailure { error ->
                 _state.update { it.copy(message = "Không lưu được API token: ${error.message}") }
                 return
-            }
-        _state.update { it.copy(config = validated, message = "Đã lưu cấu hình Gateway") }
-        refresh()
+            }.getOrThrow()
+        activateCollection(collection, "Đã lưu ${validated.name}", shouldRefresh = true)
     }
 
     fun applyPairingUri(value: String) {
@@ -90,13 +110,96 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(message = error.message ?: "Chuỗi ghép nối không hợp lệ") }
             return
         }
+        val duplicate = _state.value.gateways.firstOrNull { it.id == config.id }
+        _state.update { current ->
+            if (duplicate != null) {
+                current.copy(
+                    pairingConflict = config,
+                    message = "Gateway ID ${config.id} đã tồn tại; hãy xác nhận cập nhật"
+                )
+            } else {
+                current.copy(
+                    pairingDraft = config,
+                    pairingConflict = null,
+                    message = "Đã nhận Gateway mới từ QR; bấm Lưu và kết nối"
+                )
+            }
+        }
+    }
+
+    fun confirmPairingUpdate() {
+        val incoming = _state.value.pairingConflict ?: return
+        val existing = _state.value.gateways.firstOrNull { it.id == incoming.id } ?: return
+        val updated = incoming.copy(
+            name = existing.name,
+            lastSeen = existing.lastSeen,
+            status = existing.status,
+            cameraCount = existing.cameraCount,
+            isDefault = existing.isDefault
+        )
+        val collection = runCatching { configStore.save(updated) }.getOrElse { error ->
+            _state.update { it.copy(message = "Không cập nhật được Gateway: ${error.message}") }
+            return
+        }
+        activateCollection(collection, "Đã cập nhật ${updated.name}", shouldRefresh = true)
+    }
+
+    fun dismissPairingConflict() {
+        _state.update { it.copy(pairingConflict = null, message = null) }
+    }
+
+    fun beginAddGateway() {
         _state.update {
             it.copy(
-                config = config,
-                gatewayStatus = null,
-                gatewayConnectionError = null,
-                message = "Đã nhận cấu hình từ QR; bấm Lưu và kết nối để kiểm tra Gateway"
+                pairingDraft = GatewayConfig(name = "Gateway mới"),
+                pairingConflict = null,
+                message = "Nhập cấu hình hoặc quét QR Gateway mới"
             )
+        }
+    }
+
+    fun beginEditGateway(gatewayId: String) {
+        val gateway = _state.value.gateways.firstOrNull { it.id == gatewayId } ?: return
+        _state.update {
+            it.copy(
+                pairingDraft = gateway,
+                pairingConflict = null,
+                message = "Đang sửa ${gateway.name}"
+            )
+        }
+    }
+
+    fun cancelGatewayDraft() {
+        _state.update { it.copy(pairingDraft = null, pairingConflict = null, message = null) }
+    }
+
+    fun selectGateway(gatewayId: String) {
+        val collection = runCatching { configStore.select(gatewayId) }.getOrElse { error ->
+            _state.update { it.copy(message = error.message) }
+            return
+        }
+        activateCollection(collection, null, shouldRefresh = true)
+    }
+
+    fun renameGateway(gatewayId: String, name: String) {
+        val collection = configStore.rename(gatewayId, name)
+        val selected = collection.current
+        _state.update {
+            it.copy(
+                gateways = collection.gateways,
+                config = selected ?: GatewayConfig(),
+                message = "Đã đổi tên Gateway"
+            )
+        }
+    }
+
+    fun deleteGateway(gatewayId: String) {
+        val collection = configStore.delete(gatewayId)
+        val removedCurrent = _state.value.currentGatewayId == gatewayId
+        if (removedCurrent) {
+            activateCollection(collection, "Chỉ đã xóa cấu hình trên Viewer", shouldRefresh = collection.current != null)
+        } else {
+            _state.update { it.copy(gateways = collection.gateways, message = "Chỉ đã xóa cấu hình trên Viewer") }
         }
     }
 
@@ -105,6 +208,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(message = error.message) }
             return
         }
+        val gatewayId = _state.value.currentGatewayId ?: config.id
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, message = null) }
@@ -118,13 +222,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     storageSummary = api.storageSummary()
                 )
             }.onSuccess { payload ->
+                if (_state.value.currentGatewayId != gatewayId) return@onSuccess
                 val gatewayStatus = payload.gatewayStatus
                 val cameras = payload.cameras
+                val collection = configStore.updateStatus(
+                    gatewayId,
+                    status = "ONLINE",
+                    lastSeen = System.currentTimeMillis(),
+                    cameraCount = gatewayStatus.cameraCount
+                )
                 _state.update { current ->
                     val selected = current.selectedCameraId?.takeIf { id -> cameras.any { it.id == id } }
                         ?: cameras.firstOrNull { it.enabled }?.id
                     current.copy(
                         gatewayStatus = gatewayStatus,
+                        gateways = collection.gateways,
+                        config = collection.current ?: current.config,
                         cameras = cameras,
                         drives = payload.drives,
                         storageSummary = payload.storageSummary,
@@ -136,6 +249,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                val collection = configStore.updateStatus(gatewayId, status = "OFFLINE")
+                if (_state.value.currentGatewayId != gatewayId) return@onFailure
                 _state.update {
                     val networkFailure = error is IOException
                     val text = if (networkFailure) {
@@ -145,6 +261,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     it.copy(
                         loading = false,
+                        gateways = collection.gateways,
+                        config = collection.current ?: it.config,
                         gatewayStatus = null,
                         gatewayConnectionError = text.takeIf { networkFailure },
                         message = text
@@ -321,16 +439,68 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
+    fun checkGateway(gatewayId: String) {
+        val gateway = _state.value.gateways.firstOrNull { it.id == gatewayId } ?: return
+        viewModelScope.launch {
+            runCatching { HttpGatewayApi(gateway).status() }
+                .onSuccess { status ->
+                    val collection = configStore.updateStatus(
+                        gatewayId,
+                        status = "ONLINE",
+                        lastSeen = System.currentTimeMillis(),
+                        cameraCount = status.cameraCount
+                    )
+                    _state.update { current ->
+                        current.copy(
+                            gateways = collection.gateways,
+                            config = collection.current ?: current.config,
+                            message = "${gateway.name} đang online"
+                        )
+                    }
+                }
+                .onFailure {
+                    val collection = configStore.updateStatus(gatewayId, status = "OFFLINE")
+                    _state.update { current ->
+                        current.copy(
+                            gateways = collection.gateways,
+                            config = collection.current ?: current.config,
+                            message = "Không kết nối được ${gateway.name}"
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun activateCollection(
+        collection: GatewayCollection,
+        message: String?,
+        shouldRefresh: Boolean
+    ) {
+        refreshJob?.cancel()
+        actionJob?.cancel()
+        val selected = collection.current ?: GatewayConfig()
+        _state.update { it.activateGateway(collection, message) }
+        if (shouldRefresh && selected.validate().isSuccess) refresh()
+    }
+
     private fun launchApiAction(progress: String, block: suspend (HttpGatewayApi) -> Unit) {
         val config = _state.value.config.validate().getOrElse { error ->
             _state.update { it.copy(message = error.message) }
             return
         }
-        viewModelScope.launch {
+        val gatewayId = _state.value.currentGatewayId
+        actionJob?.cancel()
+        actionJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, message = progress) }
             runCatching { block(HttpGatewayApi(config)) }
-                .onSuccess { _state.update { it.copy(gatewayConnectionError = null) } }
+                .onSuccess {
+                    if (_state.value.currentGatewayId == gatewayId) {
+                        _state.update { it.copy(gatewayConnectionError = null) }
+                    }
+                }
                 .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    if (_state.value.currentGatewayId != gatewayId) return@onFailure
                     _state.update {
                         val text = error.message ?: "Thao tác thất bại"
                         it.copy(
@@ -367,4 +537,28 @@ private data class RefreshPayload(
     val drives: List<GoogleDriveAccount>,
     val recordingStatus: RecordingStatus,
     val storageSummary: StorageSummary
+)
+
+internal fun ViewerUiState.activateGateway(
+    collection: GatewayCollection,
+    message: String? = null
+): ViewerUiState = copy(
+    config = collection.current ?: GatewayConfig(),
+    gateways = collection.gateways,
+    currentGatewayId = collection.current?.id,
+    pairingDraft = null,
+    pairingConflict = null,
+    gatewayStatus = null,
+    cameras = emptyList(),
+    candidates = emptyList(),
+    drives = emptyList(),
+    storageSummary = null,
+    recordingStatus = null,
+    playbackDays = emptyList(),
+    playbackItems = emptyList(),
+    selectedPlaybackItemId = null,
+    selectedCameraId = null,
+    loading = false,
+    gatewayConnectionError = null,
+    message = message
 )

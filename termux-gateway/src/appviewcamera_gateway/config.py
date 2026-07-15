@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import json
 import re
 import tempfile
@@ -110,6 +111,18 @@ class GatewaySettings:
     @property
     def api_token(self) -> str:
         return read_secrets(self.secrets_path).get("API_TOKEN", "")
+
+    @property
+    def gateway_id(self) -> str:
+        values = read_secrets(self.secrets_path)
+        configured = values.get("GATEWAY_ID", "").strip()
+        if configured:
+            return configured
+        return "legacy-" + hashlib.sha256(values.get("API_TOKEN", "").encode()).hexdigest()[:24]
+
+    @property
+    def gateway_name(self) -> str:
+        return read_secrets(self.secrets_path).get("GATEWAY_NAME", "AppViewCamera Gateway").strip()
 
 
 class CameraStore:

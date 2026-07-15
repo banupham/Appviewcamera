@@ -2,8 +2,10 @@ package com.banupham.appviewcamera.viewer.live
 
 import android.content.Context
 
-class LiveViewPreferences(context: Context) {
-    private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+class LiveViewPreferences(context: Context, gatewayId: String) {
+    private val preferences = context.getSharedPreferences(
+        "$PREFERENCES-${gatewayId.ifBlank { "unpaired" }}", Context.MODE_PRIVATE
+    )
 
     fun loadLayout(): LiveLayout = LiveLayout.fromSlots(preferences.getInt(KEY_LAYOUT_SLOTS, 1))
 

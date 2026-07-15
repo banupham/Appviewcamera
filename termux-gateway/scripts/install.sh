@@ -37,6 +37,12 @@ if [ ! -s "$SECRETS_FILE" ]; then
   TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
   printf 'API_TOKEN=%s\n' "$TOKEN" > "$SECRETS_FILE"
 fi
+if ! grep -q '^GATEWAY_ID=' "$SECRETS_FILE"; then
+  printf 'GATEWAY_ID=%s\n' "$(python -c 'import uuid; print(uuid.uuid4().hex)')" >> "$SECRETS_FILE"
+fi
+if ! grep -q '^GATEWAY_NAME=' "$SECRETS_FILE"; then
+  printf 'GATEWAY_NAME=%s\n' 'AppViewCamera Gateway' >> "$SECRETS_FILE"
+fi
 chmod 600 "$SECRETS_FILE"
 touch "$APP_HOME/config/rclone.conf"
 chmod 600 "$APP_HOME/config/rclone.conf"

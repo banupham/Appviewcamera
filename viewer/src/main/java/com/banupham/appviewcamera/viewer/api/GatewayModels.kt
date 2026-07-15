@@ -39,7 +39,9 @@ data class CameraMutation(
 data class GatewayStatus(
     val status: String,
     val mediaMtxState: String,
-    val cameraCount: Int
+    val cameraCount: Int,
+    val gatewayId: String? = null,
+    val gatewayName: String? = null
 )
 
 data class DriveQuota(

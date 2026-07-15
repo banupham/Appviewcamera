@@ -21,7 +21,9 @@ object PairingUriParser {
             host = values["host"].orEmpty(),
             apiPort = values["api_port"]?.toIntOrNull() ?: -1,
             rtspPort = values["rtsp_port"]?.toIntOrNull() ?: -1,
-            apiToken = values["token"].orEmpty()
+            apiToken = values["token"].orEmpty(),
+            id = values["gateway_id"].orEmpty(),
+            name = values["gateway_name"].orEmpty()
         ).validate().getOrThrow()
     }
 

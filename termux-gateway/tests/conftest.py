@@ -50,5 +50,9 @@ def gateway_home(tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    write_secrets(config / "secrets.env", {"API_TOKEN": "test-token"})
+    write_secrets(config / "secrets.env", {
+        "API_TOKEN": "test-token",
+        "GATEWAY_ID": "gateway-test-01",
+        "GATEWAY_NAME": "Gateway Test",
+    })
     return tmp_path

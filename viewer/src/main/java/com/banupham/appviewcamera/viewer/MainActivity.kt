@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -46,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.banupham.appviewcamera.viewer.api.CameraMutation
 import com.banupham.appviewcamera.viewer.api.CameraSummary
+import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
 import com.banupham.appviewcamera.viewer.player.PlaybackPlayer
 import com.banupham.appviewcamera.viewer.playback.PlaybackSourceSelector
@@ -118,7 +120,9 @@ private fun ViewerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(selectedSection.label, style = MaterialTheme.typography.headlineSmall)
-                state.gatewayStatus?.let { Text("Gateway: ${it.status}") }
+                state.currentGatewayId?.let {
+                    Text("${state.config.name}: ${state.config.status}")
+                }
             }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             state.gatewayConnectionError?.let { error ->
@@ -136,7 +140,7 @@ private fun ViewerScreen(
                 }
             }
             if (state.loading) CircularProgressIndicator()
-            when (selectedSection) {
+            key(state.currentGatewayId) { when (selectedSection) {
                 ViewerSection.LIVE -> MultiCameraLiveScreen(state, viewModel::selectCamera)
                 ViewerSection.PLAYBACK -> PlaybackScreen(
                     state = state,
@@ -166,9 +170,17 @@ private fun ViewerScreen(
                     state,
                     viewModel::saveConfig,
                     viewModel::applyPairingUri,
-                    viewModel::refresh
+                    viewModel::selectGateway,
+                    viewModel::beginAddGateway,
+                    viewModel::beginEditGateway,
+                    viewModel::cancelGatewayDraft,
+                    viewModel::renameGateway,
+                    viewModel::checkGateway,
+                    viewModel::deleteGateway,
+                    viewModel::confirmPairingUpdate,
+                    viewModel::dismissPairingConflict
                 )
-            }
+            } }
         }
     }
 }
@@ -658,20 +670,73 @@ private fun CameraEditorDialog(
 @Composable
 private fun SettingsScreen(
     state: ViewerUiState,
-    onSave: (String, String, String, String) -> Unit,
+    onSave: (String, String, String, String, String) -> Unit,
     onPair: (String) -> Unit,
-    onRefresh: () -> Unit
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit,
+    onEdit: (String) -> Unit,
+    onCancelEdit: () -> Unit,
+    onRename: (String, String) -> Unit,
+    onCheck: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onConfirmPairingUpdate: () -> Unit,
+    onDismissPairingUpdate: () -> Unit
 ) {
-    var host by remember(state.config.host) { mutableStateOf(state.config.host) }
-    var apiPort by remember(state.config.apiPort) { mutableStateOf(state.config.apiPort.toString()) }
-    var rtspPort by remember(state.config.rtspPort) { mutableStateOf(state.config.rtspPort.toString()) }
-    var token by remember(state.config.apiToken) { mutableStateOf(state.config.apiToken) }
+    val draft = state.pairingDraft
+    var name by remember(draft) { mutableStateOf(draft?.name.orEmpty()) }
+    var host by remember(draft) { mutableStateOf(draft?.host.orEmpty()) }
+    var apiPort by remember(draft) { mutableStateOf((draft?.apiPort ?: 8080).toString()) }
+    var rtspPort by remember(draft) { mutableStateOf((draft?.rtspPort ?: 8554).toString()) }
+    var token by remember(draft) { mutableStateOf(draft?.apiToken.orEmpty()) }
+    var renameTarget by remember { mutableStateOf<GatewayConfig?>(null) }
+    var deleteTarget by remember { mutableStateOf<GatewayConfig?>(null) }
     val clipboard = LocalClipboardManager.current
     val qrScanner = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let(onPair)
     }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Kết nối Termux Gateway", style = MaterialTheme.typography.titleMedium) }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Gateway đã ghép nối", style = MaterialTheme.typography.titleMedium)
+                Button(onClick = onAdd) { Text("Thêm Gateway") }
+            }
+        }
+        if (state.gateways.isEmpty()) {
+            item { Text("Chưa có Gateway. Hãy quét QR hoặc thêm thủ công.") }
+        }
+        items(state.gateways, key = { it.id }) { gateway ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(gateway.name, style = MaterialTheme.typography.titleMedium)
+                        if (gateway.id == state.currentGatewayId) Text("Đang chọn")
+                    }
+                    Text("${gateway.status} • ${gateway.cameraCount} camera")
+                    Text("${gateway.host}:${gateway.apiPort} • RTSP ${gateway.rtspPort}")
+                    Text("Lần kết nối cuối: ${formatLastSeen(gateway.lastSeen)}")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onSelect(gateway.id) },
+                            enabled = gateway.id != state.currentGatewayId
+                        ) { Text("Chọn") }
+                        OutlinedButton(onClick = { onCheck(gateway.id) }) { Text("Kiểm tra") }
+                        OutlinedButton(onClick = { onEdit(gateway.id) }) { Text("Sửa") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { renameTarget = gateway }) { Text("Đổi tên") }
+                        TextButton(onClick = { deleteTarget = gateway }) { Text("Xóa khỏi Viewer") }
+                    }
+                }
+            }
+        }
+        item { Text("Ghép nối nhanh", style = MaterialTheme.typography.titleMedium) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -692,35 +757,75 @@ private fun SettingsScreen(
                 ) { Text("Dán chuỗi ghép nối") }
             }
         }
-        item { Text("Quét QR hoặc dán chuỗi chỉ điền cấu hình vào form. App chỉ kết nối sau khi bấm Lưu và kết nối.") }
-        item { OutlinedTextField(host, { host = it }, modifier = Modifier.fillMaxWidth(), label = { Text("IP LAN hoặc Tailscale") }) }
-        item {
-            OutlinedTextField(
-                apiPort, { apiPort = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(),
-                label = { Text("API port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-        }
-        item {
-            OutlinedTextField(
-                rtspPort, { rtspPort = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(),
-                label = { Text("RTSP port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-        }
-        item {
-            OutlinedTextField(
-                token, { token = it }, modifier = Modifier.fillMaxWidth(), label = { Text("API token") },
-                visualTransformation = PasswordVisualTransformation()
-            )
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onSave(host, apiPort, rtspPort, token) }) { Text("Lưu và kết nối") }
-                OutlinedButton(onClick = onRefresh) { Text("Kiểm tra") }
+        item { Text("QR mới sẽ thêm Gateway, không ghi đè Gateway cũ. App chỉ lưu sau khi bấm Lưu và kết nối.") }
+        if (draft != null) {
+            item { Text(if (state.gateways.any { it.id == draft.id }) "Sửa Gateway" else "Gateway mới", style = MaterialTheme.typography.titleMedium) }
+            item { OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Tên Gateway") }) }
+            item { OutlinedTextField(host, { host = it }, modifier = Modifier.fillMaxWidth(), label = { Text("IP LAN hoặc Tailscale") }) }
+            item {
+                OutlinedTextField(
+                    apiPort, { apiPort = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("API port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+            item {
+                OutlinedTextField(
+                    rtspPort, { rtspPort = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("RTSP port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+            item {
+                OutlinedTextField(
+                    token, { token = it }, modifier = Modifier.fillMaxWidth(), label = { Text("API token") },
+                    visualTransformation = PasswordVisualTransformation()
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onSave(name, host, apiPort, rtspPort, token) }) { Text("Lưu và kết nối") }
+                    OutlinedButton(onClick = onCancelEdit) { Text("Hủy") }
+                }
             }
         }
         item { Text("API token được mã hóa bằng Android Keystore và không gửi cho dịch vụ nào ngoài Gateway đã cấu hình.") }
     }
+    state.pairingConflict?.let { conflict ->
+        AlertDialog(
+            onDismissRequest = onDismissPairingUpdate,
+            title = { Text("Gateway đã tồn tại") },
+            text = { Text("QR có cùng Gateway ID với ${state.gateways.firstOrNull { it.id == conflict.id }?.name}. Cập nhật IP, cổng và token?") },
+            confirmButton = { Button(onClick = onConfirmPairingUpdate) { Text("Cập nhật") } },
+            dismissButton = { TextButton(onClick = onDismissPairingUpdate) { Text("Hủy") } }
+        )
+    }
+    renameTarget?.let { gateway ->
+        var newName by remember(gateway.id) { mutableStateOf(gateway.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Đổi tên Gateway") },
+            text = { OutlinedTextField(newName, { newName = it }, label = { Text("Tên") }) },
+            confirmButton = {
+                Button(onClick = { onRename(gateway.id, newName); renameTarget = null }) { Text("Lưu") }
+            },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Hủy") } }
+        )
+    }
+    deleteTarget?.let { gateway ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Xóa ${gateway.name} khỏi Viewer?") },
+            text = { Text("Chỉ xóa cấu hình trên Viewer. Camera, video, Drive và YouTube trên Gateway không bị xóa.") },
+            confirmButton = {
+                Button(onClick = { onDelete(gateway.id); deleteTarget = null }) { Text("Xóa khỏi Viewer") }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Hủy") } }
+        )
+    }
 }
+
+private fun formatLastSeen(value: Long?): String = value?.let {
+    SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(it))
+} ?: "Chưa kết nối"
 
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {

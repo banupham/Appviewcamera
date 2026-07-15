@@ -57,7 +57,9 @@ fun MultiCameraLiveScreen(state: ViewerUiState, onSelectCamera: (String) -> Unit
     }
 
     val context = LocalContext.current
-    val preferences = remember(context) { LiveViewPreferences(context.applicationContext) }
+    val preferences = remember(context, state.currentGatewayId) {
+        LiveViewPreferences(context.applicationContext, state.currentGatewayId.orEmpty())
+    }
     val decoderCapacity = remember(context) { detectDecoderCapacity(context) }
     var layout by remember { mutableStateOf(preferences.loadLayout()) }
     var selectedIds by remember {

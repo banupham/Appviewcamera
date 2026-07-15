@@ -119,6 +119,8 @@ class GatewayRouter:
             if method == "GET" and path == "/api/status":
                 return 200, {
                     "status": "ONLINE",
+                    "gateway_id": self.runtime.settings.gateway_id,
+                    "gateway_name": self.runtime.settings.gateway_name,
                     "version": __version__,
                     "camera_count": len(self.runtime.camera_store.list()),
                     "candidate_count": len(self.runtime.available_candidates()),

@@ -18,6 +18,8 @@ def test_api_requires_bearer_token(gateway_home):
         assert router.route("GET", "/api/status", "")[0] == 401
         code, response = router.route("GET", "/api/status", "Bearer test-token")
         assert code == 200
+        assert response["gateway_id"] == "gateway-test-01"
+        assert response["gateway_name"] == "Gateway Test"
         assert response["mediamtx"]["state"] == "UNAVAILABLE"
     finally:
         loop.close()
