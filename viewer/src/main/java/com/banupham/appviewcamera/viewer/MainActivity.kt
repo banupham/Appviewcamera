@@ -445,6 +445,7 @@ private fun DevicesScreen(
 ) {
     var editor by remember { mutableStateOf<CameraEditorSeed?>(null) }
     var deleteCamera by remember { mutableStateOf<CameraSummary?>(null) }
+    val availableCandidates = availableDiscoveryCandidates(state.candidates, state.cameras)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = onScan, enabled = !state.loading) { Text("Quét LAN") }
         OutlinedButton(onClick = onRefresh, enabled = !state.loading) { Text("Làm mới") }
@@ -470,9 +471,9 @@ private fun DevicesScreen(
                 }
             }
         }
-        if (state.candidates.isNotEmpty()) {
+        if (availableCandidates.isNotEmpty()) {
             item { Text("Thiết bị tìm thấy", style = MaterialTheme.typography.titleMedium) }
-            val groups = state.candidates.groupBy { it.host }.toSortedMap()
+            val groups = availableCandidates.groupBy { it.host }.toSortedMap()
             items(groups.entries.toList(), key = { "candidate-${it.key}" }) { (host, entries) ->
                 val ports = entries.map { it.port }.distinct().sorted()
                 Card(modifier = Modifier.fillMaxWidth()) {

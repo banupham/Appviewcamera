@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS discovery_candidates (
     port INTEGER NOT NULL,
     source TEXT NOT NULL,
     service_url TEXT,
+    onvif_uuid TEXT,
+    mac TEXT,
     first_seen TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_seen TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (host, port)
@@ -68,7 +70,18 @@ class GatewayDatabase:
         self._lock = threading.RLock()
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._migrate_discovery_candidates(connection)
             self._migrate_recording_clips(connection)
+
+    @staticmethod
+    def _migrate_discovery_candidates(connection: sqlite3.Connection) -> None:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(discovery_candidates)").fetchall()
+        }
+        for name in ("onvif_uuid", "mac"):
+            if name not in columns:
+                connection.execute(f"ALTER TABLE discovery_candidates ADD COLUMN {name} TEXT")
 
     @staticmethod
     def _migrate_recording_clips(connection: sqlite3.Connection) -> None:
@@ -100,26 +113,46 @@ class GatewayDatabase:
         return connection
 
     def save_candidates(self, candidates: Iterable[dict]) -> None:
+        rows = [
+            {
+                **candidate,
+                "service_url": candidate.get("service_url"),
+                "onvif_uuid": candidate.get("onvif_uuid"),
+                "mac": candidate.get("mac"),
+            }
+            for candidate in candidates
+        ]
         with self._lock, self.connect() as connection:
             connection.executemany(
                 """
-                INSERT INTO discovery_candidates(host, port, source, service_url)
-                VALUES (:host, :port, :source, :service_url)
+                INSERT INTO discovery_candidates(host, port, source, service_url, onvif_uuid, mac)
+                VALUES (:host, :port, :source, :service_url, :onvif_uuid, :mac)
                 ON CONFLICT(host, port) DO UPDATE SET
                     source=excluded.source,
                     service_url=COALESCE(excluded.service_url, discovery_candidates.service_url),
+                    onvif_uuid=COALESCE(excluded.onvif_uuid, discovery_candidates.onvif_uuid),
+                    mac=COALESCE(excluded.mac, discovery_candidates.mac),
                     last_seen=CURRENT_TIMESTAMP
                 """,
-                candidates,
+                rows,
             )
 
     def list_candidates(self) -> list[dict]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT host, port, source, service_url, first_seen, last_seen "
+                "SELECT host, port, source, service_url, onvif_uuid, mac, first_seen, last_seen "
                 "FROM discovery_candidates ORDER BY last_seen DESC, host, port"
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def find_candidate(self, host: str, port: int) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT host, port, source, service_url, onvif_uuid, mac "
+                "FROM discovery_candidates WHERE lower(host)=lower(?) AND port=?",
+                (host, port),
+            ).fetchone()
+        return dict(row) if row else None
 
     def find_clip_by_path(self, relative_path: str) -> dict | None:
         with self.connect() as connection:

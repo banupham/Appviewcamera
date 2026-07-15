@@ -13,6 +13,8 @@ from .config import GatewaySettings
 
 ONVIF_MULTICAST = ("239.255.255.250", 3702)
 XADDRS_PATTERN = re.compile(r"<[^>]*XAddrs[^>]*>(.*?)</[^>]*XAddrs>", re.DOTALL)
+ADDRESS_PATTERN = re.compile(r"<[^>]*Address[^>]*>\s*(?:urn:)?uuid:([^<\s]+)", re.IGNORECASE)
+WEB_DISCOVERY_PORTS = frozenset({80, 443})
 
 
 def detect_ipv4_address() -> str | None:
@@ -84,14 +86,18 @@ def discover_onvif(timeout_seconds: float = 2.0) -> list[dict]:
                 continue
             text = payload.decode("utf-8", errors="ignore")
             matches = XADDRS_PATTERN.findall(text)
+            address_match = ADDRESS_PATTERN.search(text)
+            onvif_uuid = address_match.group(1).lower() if address_match else None
             for group in matches:
                 for url in group.split():
                     candidate = _candidate_from_url(url)
                     if candidate:
+                        candidate["onvif_uuid"] = onvif_uuid
                         found[(candidate["host"], candidate["port"])] = candidate
             if not matches:
                 found[(sender[0], 80)] = {
-                    "host": sender[0], "port": 80, "source": "onvif", "service_url": None
+                    "host": sender[0], "port": 80, "source": "onvif",
+                    "service_url": None, "onvif_uuid": onvif_uuid,
                 }
     except OSError:
         # Một số thiết bị Android chặn multicast. Quét subnet vẫn tiếp tục.
@@ -155,6 +161,49 @@ async def scan_subnets(
     return found
 
 
+def camera_candidates(candidates: list[dict]) -> list[dict]:
+    """Hide HTTP discovery probes while preserving their ONVIF metadata internally."""
+    metadata_by_host: dict[str, dict] = {}
+    for candidate in candidates:
+        if int(candidate["port"]) in WEB_DISCOVERY_PORTS:
+            metadata = metadata_by_host.setdefault(str(candidate["host"]), {})
+            for key in ("service_url", "onvif_uuid", "mac"):
+                if candidate.get(key):
+                    metadata[key] = candidate[key]
+
+    visible: dict[tuple[str, int], dict] = {}
+    for candidate in candidates:
+        port = int(candidate["port"])
+        if port in WEB_DISCOVERY_PORTS:
+            continue
+        item = dict(candidate)
+        for key, value in metadata_by_host.get(str(item["host"]), {}).items():
+            if not item.get(key):
+                item[key] = value
+        visible[(str(item["host"]), port)] = item
+    return list(visible.values())
+
+
+def candidate_matches_camera(candidate: dict, camera: dict) -> bool:
+    for key in ("onvif_uuid", "mac"):
+        left = str(candidate.get(key) or "").strip().lower()
+        right = str(camera.get(key) or "").strip().lower()
+        if left and right and left == right:
+            return True
+    return (
+        str(candidate.get("host", "")).strip().lower()
+        == str(camera.get("host", "")).strip().lower()
+        and int(candidate.get("port", 554)) == int(camera.get("port", 554))
+    )
+
+
+def without_added_cameras(candidates: list[dict], cameras: list[dict]) -> list[dict]:
+    return [
+        candidate for candidate in camera_candidates(candidates)
+        if not any(candidate_matches_camera(candidate, camera) for camera in cameras)
+    ]
+
+
 async def discover_cameras(settings: GatewaySettings) -> list[dict]:
     local_addresses = local_ipv4_addresses()
     onvif = await asyncio.to_thread(discover_onvif, min(3.0, settings.discovery_timeout_seconds * 4))
@@ -176,4 +225,4 @@ async def discover_cameras(settings: GatewaySettings) -> list[dict]:
         except ValueError:
             return (1, item["host"], item["port"])
 
-    return sorted(merged.values(), key=sort_key)
+    return sorted(camera_candidates(list(merged.values())), key=sort_key)

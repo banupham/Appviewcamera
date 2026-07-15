@@ -2,6 +2,8 @@ import json
 import asyncio
 from unittest.mock import AsyncMock
 
+import pytest
+
 from appviewcamera_gateway.config import CameraStore, GatewaySettings, read_secrets
 from appviewcamera_gateway.mediamtx import MediaMtxSupervisor, camera_source, render_mediamtx_config
 
@@ -26,6 +28,15 @@ def test_camera_password_is_kept_out_of_camera_config(gateway_home):
     assert read_secrets(settings.secrets_path)[saved["secret_ref"]] == "p@ss word"
     source = camera_source(saved, read_secrets(settings.secrets_path))
     assert source == "rtsp://admin%40example:p%40ss%20word@192.168.1.20:554/Streaming/Channels/101"
+
+
+def test_camera_cannot_be_added_twice_by_host_and_rtsp_port(gateway_home):
+    store = CameraStore(GatewaySettings.load(gateway_home))
+    common = {"host": "192.168.1.20", "port": 554, "main_path": "live"}
+    store.upsert({"id": "camera01", **common})
+
+    with pytest.raises(ValueError, match="camera01"):
+        store.upsert({"id": "camera02", **common})
 
 
 def test_mediamtx_only_contains_enabled_cameras(gateway_home):

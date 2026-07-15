@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from . import __version__
 from .config import CameraStore, GatewaySettings
 from .database import GatewayDatabase
-from .discovery import discover_cameras
+from .discovery import discover_cameras, without_added_cameras
 from .mediamtx import MediaMtxSupervisor
 from .storage import GoogleDriveStore
 from .recording import RecordingManager, RecordingWorker
@@ -76,11 +76,15 @@ class GatewayRuntime:
                 candidates = await discover_cameras(self.settings)
                 await asyncio.to_thread(self.database.save_candidates, candidates)
                 self.last_discovery_error = None
-                return candidates
+                return self.available_candidates(candidates)
             except Exception as error:
                 self.last_discovery_error = str(error)
                 LOGGER.exception("Quét camera thất bại")
                 raise
+
+    def available_candidates(self, candidates: list[dict] | None = None) -> list[dict]:
+        discovered = self.database.list_candidates() if candidates is None else candidates
+        return without_added_cameras(discovered, self.camera_store.list())
 
     async def _periodic_discovery(self) -> None:
         await asyncio.sleep(5)
@@ -115,7 +119,7 @@ class GatewayRouter:
                     "status": "ONLINE",
                     "version": __version__,
                     "camera_count": len(self.runtime.camera_store.list()),
-                    "candidate_count": len(self.runtime.database.list_candidates()),
+                    "candidate_count": len(self.runtime.available_candidates()),
                     "discovery_running": self.runtime.discovery_lock.locked(),
                     "last_discovery_error": self.runtime.last_discovery_error,
                     "mediamtx": self.runtime.mediamtx.status(),
@@ -190,7 +194,7 @@ class GatewayRouter:
                     return 404, {"detail": "Không tìm thấy clip"}
                 return 200, clip
             if method == "GET" and path == "/api/discovery/candidates":
-                return 200, self.runtime.database.list_candidates()
+                return 200, self.runtime.available_candidates()
             if method == "POST" and path == "/api/discovery/scan":
                 candidates = self._await(self.runtime.scan(), 180)
                 return 200, {"count": len(candidates), "candidates": candidates}
@@ -204,6 +208,13 @@ class GatewayRouter:
                     if request.get("id") != camera_id:
                         return 400, {"detail": "camera_id không khớp nội dung"}
                     password = request.pop("password", None)
+                    discovered = self.runtime.database.find_candidate(
+                        str(request.get("host", "")), int(request.get("port", 554))
+                    )
+                    if discovered:
+                        for key in ("onvif_uuid", "mac"):
+                            if discovered.get(key):
+                                request.setdefault(key, discovered[key])
                     saved = self.runtime.camera_store.upsert(request, password)
                     self._await(self.runtime.mediamtx.reconfigure(), 20)
                     return 200, saved

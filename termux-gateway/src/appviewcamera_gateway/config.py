@@ -143,6 +143,8 @@ class CameraStore:
             "event_port": int(camera.get("event_port", 80)),
             "event_path": str(camera.get("event_path") or "ISAPI/Event/notification/alertStream").strip("/"),
             "audio_enabled": bool(camera.get("audio_enabled", True)),
+            "onvif_uuid": str(camera.get("onvif_uuid") or "").strip().lower() or None,
+            "mac": str(camera.get("mac") or "").strip().lower() or None,
             "secret_ref": f"CAMERA_{camera_id.upper().replace('-', '_')}_PASSWORD",
         }
         if not normalized["host"] or not normalized["main_path"]:
@@ -153,6 +155,20 @@ class CameraStore:
             raise ValueError("port phải nằm trong khoảng 1..65535")
         with self._lock:
             cameras = self.list()
+            for existing in cameras:
+                if existing.get("id") == camera_id:
+                    continue
+                same_identifier = any(
+                    normalized.get(key) and existing.get(key)
+                    and normalized[key] == str(existing[key]).strip().lower()
+                    for key in ("onvif_uuid", "mac")
+                )
+                same_endpoint = (
+                    normalized["host"].lower() == str(existing.get("host", "")).strip().lower()
+                    and normalized["port"] == int(existing.get("port", 554))
+                )
+                if same_identifier or same_endpoint:
+                    raise ValueError(f"camera này đã được thêm với ID {existing.get('id')}")
             cameras = [item for item in cameras if item.get("id") != camera_id]
             cameras.append(normalized)
             _atomic_json(self.path, {"cameras": cameras})

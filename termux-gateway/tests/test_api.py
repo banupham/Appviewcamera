@@ -46,6 +46,25 @@ def test_camera_crud_never_returns_password(gateway_home):
         loop.close()
 
 
+def test_added_camera_is_hidden_from_discovery_api(gateway_home):
+    router, loop = make_router(gateway_home)
+    headers = "Bearer test-token"
+    router.runtime.database.save_candidates([
+        {"host": "192.0.2.20", "port": 80, "source": "tcp_scan", "service_url": None},
+        {"host": "192.0.2.20", "port": 554, "source": "tcp_scan", "service_url": None},
+        {"host": "192.0.2.21", "port": 554, "source": "tcp_scan", "service_url": None},
+    ])
+    router.runtime.camera_store.upsert({
+        "id": "camera01", "host": "192.0.2.20", "port": 554, "main_path": "live"
+    })
+    try:
+        code, candidates = router.route("GET", "/api/discovery/candidates", headers)
+        assert code == 200
+        assert [(item["host"], item["port"]) for item in candidates] == [("192.0.2.21", 554)]
+    finally:
+        loop.close()
+
+
 def test_drive_api_never_returns_oauth_token(gateway_home):
     router, loop = make_router(gateway_home)
     headers = "Bearer test-token"
