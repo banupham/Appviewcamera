@@ -51,7 +51,7 @@ fun buildLiveGridPlan(
 }
 
 fun liveRelayPath(camera: CameraSummary, expanded: Boolean): String =
-    if (!expanded && camera.subPath.isNotBlank()) "${camera.relayPath}_sub" else camera.relayPath
+    camera.relayPath
 
 object RtspRetryPolicy {
     private val delays = longArrayOf(1_000, 3_000, 5_000, 10_000)

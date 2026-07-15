@@ -34,31 +34,34 @@ def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> di
     for camera in cameras:
         if not camera.get("enabled", True):
             continue
-        paths[str(camera.get("relay_path") or camera["id"])] = {
+        camera_id = str(camera["id"])
+        relay_path = str(camera.get("relay_path") or camera_id)
+        primary_path = {
             "source": camera_source(camera, secrets),
             "rtspTransport": "tcp",
             "sourceOnDemand": True,
         }
-        if camera.get("sub_path"):
-            paths[f"{str(camera.get('relay_path') or camera['id'])}_sub"] = {
-                "source": camera_source(camera, secrets, "sub_path"),
-                "rtspTransport": "tcp",
-                "sourceOnDemand": True,
-            }
         if camera.get("storage_enabled", camera.get("record_enabled", True)):
-            path_key = "sub_path" if recording["prefer_substream"] and camera.get("sub_path") else "main_path"
-            camera_id = str(camera["id"])
-            paths[f"record_{camera_id}"] = {
-                "source": camera_source(camera, secrets, path_key),
-                "rtspTransport": "tcp",
+            # Record on the same MediaMTX path used by live playback. This keeps
+            # one upstream RTSP session per camera instead of a competing
+            # record_camera session that can make limited cameras disconnect.
+            primary_path.update({
                 "sourceOnDemand": False,
                 "record": True,
                 "recordPath": str(recording_root / camera_id / "%Y-%m-%d" / "%Y-%m-%d_%H-%M-%S-%f"),
                 "recordFormat": "fmp4",
                 "recordPartDuration": f"{recording['part_duration_seconds']}s",
                 "recordSegmentDuration": f"{recording['segment_duration_seconds']}s",
-                # Custom retention only removes clips after a verified Drive upload.
                 "recordDeleteAfter": "0s",
+            })
+        paths[relay_path] = primary_path
+        if camera.get("sub_path"):
+            # Preserve the legacy _sub endpoint without opening a second camera
+            # session. Older Viewer APKs can therefore share the primary ingest.
+            paths[f"{relay_path}_sub"] = {
+                "source": f"rtsp://127.0.0.1:{settings.mediamtx_rtsp_port}/{relay_path}",
+                "rtspTransport": "tcp",
+                "sourceOnDemand": True,
             }
     return {
         "logLevel": "warn",

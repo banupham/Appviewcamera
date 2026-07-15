@@ -46,10 +46,11 @@ def test_mediamtx_only_contains_enabled_cameras(gateway_home):
         {"id": "two", "host": "192.0.2.2", "main_path": "live", "relay_path": "two", "enabled": False},
     ]
     rendered = render_mediamtx_config(settings, cameras)
-    assert list(rendered["paths"]) == ["one", "record_one"]
+    assert list(rendered["paths"]) == ["one"]
     assert "two" not in rendered["paths"]
     assert "record_two" not in rendered["paths"]
-    assert rendered["paths"]["one"]["sourceOnDemand"] is True
+    assert rendered["paths"]["one"]["sourceOnDemand"] is False
+    assert rendered["paths"]["one"]["record"] is True
 
 
 def test_enabled_camera_records_automatically_in_sixty_second_segments(gateway_home):
@@ -72,11 +73,11 @@ def test_enabled_camera_records_automatically_in_sixty_second_segments(gateway_h
 
     rendered = render_mediamtx_config(settings, cameras)
 
-    assert "record" not in rendered["paths"]["one"]
-    assert rendered["paths"]["one_sub"]["source"].endswith("/sub")
+    assert rendered["paths"]["one"]["source"].endswith("/main")
+    assert rendered["paths"]["one_sub"]["source"] == "rtsp://127.0.0.1:8554/one"
     assert rendered["paths"]["one_sub"]["sourceOnDemand"] is True
-    record_path = rendered["paths"]["record_one"]
-    assert record_path["source"].endswith("/sub")
+    record_path = rendered["paths"]["one"]
+    assert record_path["source"].endswith("/main")
     assert record_path["record"] is True
     assert record_path["recordSegmentDuration"] == "60s"
     assert record_path["recordDeleteAfter"] == "0s"
@@ -90,6 +91,8 @@ def test_storage_enabled_can_disable_one_camera(gateway_home):
     }])
     assert "one" in rendered["paths"]
     assert "record_one" not in rendered["paths"]
+    assert "record" not in rendered["paths"]["one"]
+    assert rendered["paths"]["one"]["sourceOnDemand"] is True
 
 
 def test_hot_reconfigure_does_not_stop_running_mediamtx(gateway_home):
