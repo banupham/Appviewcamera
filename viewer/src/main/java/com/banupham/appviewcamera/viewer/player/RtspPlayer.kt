@@ -153,18 +153,16 @@ fun RtspPlayer(
                 it.useController = showControls
             }
         )
-        Text(
-            text = when (tileState) {
-                RtspTileState.LOADING -> "Đang tải…"
-                RtspTileState.RETRY -> "Đang kết nối lại…"
-                RtspTileState.OFFLINE -> "Camera ngoại tuyến${detail?.let { ": $it" }.orEmpty()}"
-                RtspTileState.ONLINE -> "● Online"
-            },
-            color = when (tileState) {
-                RtspTileState.OFFLINE -> MaterialTheme.colorScheme.error
-                RtspTileState.ONLINE -> Color.Green
-                else -> Color.White
-            }
-        )
+        if (tileState != RtspTileState.ONLINE) {
+            Text(
+                text = when (tileState) {
+                    RtspTileState.LOADING -> "Đang tải…"
+                    RtspTileState.RETRY -> "Đang kết nối lại…"
+                    RtspTileState.OFFLINE -> "Camera ngoại tuyến${detail?.let { ": $it" }.orEmpty()}"
+                    RtspTileState.ONLINE -> ""
+                },
+                color = if (tileState == RtspTileState.OFFLINE) MaterialTheme.colorScheme.error else Color.White
+            )
+        }
     }
 }

@@ -25,7 +25,7 @@ The requested scope is only `https://www.googleapis.com/auth/youtube.upload`. Up
 
 ## Batching and retry
 
-- Default batch length is 60 minutes; configured values may be 15, 30, 60, or 120 minutes.
+- Default batch length is 60 minutes; configured values may be 60, 90, or 120 minutes.
 - The quota planner may automatically choose 90 or 120 minutes to stay at or below 80 uploads/day.
 - Segments are grouped by camera and local day; different cameras and days are never mixed.
 - `ffprobe` checks compatibility and `ffmpeg -c copy` joins compatible MP4 segments without default transcoding.

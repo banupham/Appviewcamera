@@ -35,7 +35,9 @@ def load_recording_config(settings: GatewaySettings) -> dict[str, Any]:
     else:
         cache_retention_minutes = int(recording.get("local_retention_minutes", 360))
     return {
-        "enabled": bool(recording.get("enabled", False)),
+        # Recording is automatic. Keep the legacy key on disk for compatibility,
+        # but never require a user action to start the Drive-first pipeline.
+        "enabled": True,
         "root": str(recording.get("root", "recordings")),
         "segment_duration_seconds": max(10, min(3600, int(recording.get("segment_duration_seconds", 60)))),
         "part_duration_seconds": max(1, min(10, int(recording.get("part_duration_seconds", 1)))),
@@ -64,7 +66,7 @@ class RecordingManager:
         if not isinstance(raw, dict):
             raw = {}
         recording = raw.setdefault("recording", {})
-        recording["enabled"] = bool(enabled)
+        recording["enabled"] = True
         if local_retention_minutes is not None:
             value = max(5, min(10080, int(local_retention_minutes)))
             recording["local_retention_minutes"] = value

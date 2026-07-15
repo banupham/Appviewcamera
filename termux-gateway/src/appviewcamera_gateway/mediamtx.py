@@ -45,7 +45,7 @@ def render_mediamtx_config(settings: GatewaySettings, cameras: list[dict]) -> di
                 "rtspTransport": "tcp",
                 "sourceOnDemand": True,
             }
-        if recording["enabled"] and camera.get("record_enabled", True):
+        if camera.get("storage_enabled", camera.get("record_enabled", True)):
             path_key = "sub_path" if recording["prefer_substream"] and camera.get("sub_path") else "main_path"
             camera_id = str(camera["id"])
             paths[f"record_{camera_id}"] = {

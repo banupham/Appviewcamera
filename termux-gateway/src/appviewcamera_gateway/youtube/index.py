@@ -355,3 +355,14 @@ class YouTubeRepository:
                 (local_day,),
             ).fetchone()
         return int(row["count"])
+
+    def waiting_batch_minutes(self) -> int:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT COALESCE(MAX(total_ms),0) value FROM ("
+                "SELECT SUM(duration_ms) total_ms FROM recording_clips "
+                "WHERE youtube_batch_id IS NULL AND upload_state='UPLOADED' "
+                "AND remote_verified_at_ms IS NOT NULL GROUP BY camera_id, "
+                "date(started_at_ms / 1000, 'unixepoch', 'localtime'))"
+            ).fetchone()
+        return int(int(row["value"] or 0) / 60_000)

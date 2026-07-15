@@ -76,7 +76,7 @@ Các file người dùng được giữ khi chạy lại installer:
 - `config/cameras.json`: camera, relay path; không chứa password.
 - `config/recording.json`: ghi hình và retention.
 - `config/google-drives.json`: danh sách remote và chính sách; không chứa OAuth token.
-- `config/youtube.json`: OAuth client của dự án, batch 15/30/60/120 phút và ngưỡng tối đa 80 upload/ngày.
+- `config/youtube.json`: OAuth client của dự án, batch 60/90/120 phút và ngưỡng tối đa 80 upload/ngày.
 - `config/secrets.env`: API token và password camera, quyền file `600`.
 - `config/rclone.conf`: do rclone tạo ở giai đoạn Google Drive, không trả về Viewer.
 

@@ -130,7 +130,10 @@ data class RecordingStatus(
     val pendingUploads: Int,
     val failedUploads: Int,
     val uploadedClips: Int,
-    val lastUploadError: String?
+    val lastUploadError: String?,
+    val driveSyncedAtMs: Long?,
+    val youtubeBatchMinutes: Int,
+    val youtubeTargetMinutes: Int
 )
 
 data class RecordingClip(

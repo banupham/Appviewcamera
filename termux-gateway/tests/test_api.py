@@ -115,19 +115,19 @@ def test_youtube_oauth_configuration_and_accounts_never_return_secrets(gateway_h
         loop.close()
 
 
-def test_recording_can_be_enabled_through_api(gateway_home):
+def test_recording_remains_automatic_through_legacy_api(gateway_home):
     router, loop = make_router(gateway_home)
     headers = "Bearer test-token"
     try:
         code, initial = router.route("GET", "/api/recording", headers)
         assert code == 200
-        assert initial["enabled"] is False
+        assert initial["enabled"] is True
 
         code, updated = router.route(
             "PUT",
             "/api/recording",
             headers,
-            json.dumps({"enabled": True, "local_retention_minutes": 30}).encode(),
+            json.dumps({"enabled": False, "local_retention_minutes": 30}).encode(),
         )
         assert code == 200
         assert updated["enabled"] is True

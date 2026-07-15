@@ -76,6 +76,10 @@ def test_batch_groups_same_camera_and_day_only(gateway_home, tmp_path):
     clips = repository.batch_clips(job["batch_id"])
     assert {clip["camera_id"] for clip in clips} == {"camera01"}
     assert {clip["id"] for clip in clips} == {"a1", "a2"}
+    repository.mark_uploaded(job["id"], "youtube-video-01")
+    mapped = repository.batch_clips(job["batch_id"])
+    assert [clip["youtube_start_offset_seconds"] for clip in mapped] == [0, 1800]
+    assert [clip["youtube_end_offset_seconds"] for clip in mapped] == [1800, 3600]
 
 
 def _fake_batch_file(root: Path, batch_id: str) -> Path:

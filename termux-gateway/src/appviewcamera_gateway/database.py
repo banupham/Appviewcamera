@@ -453,6 +453,14 @@ class GatewayDatabase:
             row = connection.execute("SELECT COUNT(*) AS count FROM recording_clips").fetchone()
         return int(row["count"])
 
+    def last_drive_verified_at_ms(self) -> int | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT MAX(remote_verified_at_ms) value FROM recording_clips "
+                "WHERE upload_state='UPLOADED'"
+            ).fetchone()
+        return int(row["value"]) if row and row["value"] is not None else None
+
     def pending_clips(self, now_ms: int, limit: int = 10) -> list[dict]:
         with self.connect() as connection:
             rows = connection.execute(
@@ -549,7 +557,8 @@ class GatewayDatabase:
             rows = connection.execute(
                 "SELECT * FROM recording_clips WHERE local_state='AVAILABLE' "
                 "AND clip_state='LOCAL_CACHE' AND remote_verified_at_ms IS NOT NULL "
-                "AND remote_size_bytes=size_bytes AND uploaded_at_ms<=? "
+                "AND remote_size_bytes=size_bytes AND youtube_status='YOUTUBE_READY' "
+                "AND uploaded_at_ms<=? "
                 "ORDER BY uploaded_at_ms LIMIT ?",
                 (before_ms, max(1, min(500, limit))),
             ).fetchall()

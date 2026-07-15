@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.banupham.appviewcamera.viewer.ViewerUiState
 import com.banupham.appviewcamera.viewer.api.CameraSummary
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
+import kotlinx.coroutines.delay
 
 @Composable
 fun MultiCameraLiveScreen(state: ViewerUiState, onSelectCamera: (String) -> Unit) {
@@ -140,7 +141,7 @@ fun MultiCameraLiveScreen(state: ViewerUiState, onSelectCamera: (String) -> Unit
             )
         }
         LazyVerticalGrid(
-            columns = GridCells.Fixed(layout.columns),
+            columns = GridCells.Fixed(1),
             modifier = Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -161,6 +162,11 @@ fun MultiCameraLiveScreen(state: ViewerUiState, onSelectCamera: (String) -> Unit
 
 @Composable
 private fun LiveCameraTile(camera: CameraSummary, url: String, onExpand: () -> Unit) {
+    var showName by remember(camera.id) { mutableStateOf(true) }
+    LaunchedEffect(camera.id) {
+        delay(1_000)
+        showName = false
+    }
     Card(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
         Box(modifier = Modifier.fillMaxSize()) {
             RtspPlayer(url = url, modifier = Modifier.fillMaxSize(), showControls = false)
@@ -173,7 +179,7 @@ private fun LiveCameraTile(camera: CameraSummary, url: String, onExpand: () -> U
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(camera.name, color = Color.White, maxLines = 1)
+                if (showName) Text(camera.name, color = Color.White, maxLines = 1)
                 TextButton(onClick = onExpand) { Text("Phóng to", color = Color.White) }
             }
         }

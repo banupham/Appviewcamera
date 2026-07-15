@@ -230,9 +230,13 @@ class GatewayRouter:
                     str(request.get("oauth_token", "")),
                 )
             if method == "GET" and path == "/api/recording":
+                youtube_status = self.runtime.youtube_worker.status()
                 return 200, {
                     **self.runtime.recording.status(),
                     **self.runtime.recording_worker.status(),
+                    "drive_synced_at_ms": self.runtime.database.last_drive_verified_at_ms(),
+                    "youtube_batch_minutes": self.runtime.youtube_repository.waiting_batch_minutes(),
+                    "youtube_target_minutes": youtube_status["target_duration_minutes"],
                 }
             if method == "PUT" and path == "/api/recording":
                 request = json.loads(body.decode("utf-8"))

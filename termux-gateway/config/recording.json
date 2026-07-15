@@ -1,6 +1,6 @@
 {
   "recording": {
-    "enabled": false,
+    "enabled": true,
     "root": "recordings",
     "format": "fmp4",
     "segment_duration_seconds": 60,

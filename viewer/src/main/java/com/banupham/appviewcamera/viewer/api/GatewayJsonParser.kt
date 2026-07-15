@@ -22,7 +22,9 @@ object GatewayJsonParser {
                         subPath = item.optString("sub_path"),
                         relayPath = item.optString("relay_path").ifBlank { id },
                         enabled = item.optBoolean("enabled", true),
-                        recordingEnabled = item.optBoolean("record_enabled", false),
+                        recordingEnabled = if (item.has("storage_enabled")) {
+                            item.optBoolean("storage_enabled", true)
+                        } else item.optBoolean("record_enabled", true),
                         motionEnabled = item.optBoolean("motion_enabled", false)
                     )
                 )
@@ -183,7 +185,10 @@ object GatewayJsonParser {
             failedUploads = uploads?.optInt("FAILED", 0) ?: 0,
             uploadedClips = uploads?.optInt("UPLOADED", 0) ?: 0,
             lastUploadError = root.optString("last_upload_error")
-                .takeIf { it.isNotBlank() && it != "null" }
+                .takeIf { it.isNotBlank() && it != "null" },
+            driveSyncedAtMs = root.optionalLong("drive_synced_at_ms"),
+            youtubeBatchMinutes = root.optInt("youtube_batch_minutes", 0),
+            youtubeTargetMinutes = root.optInt("youtube_target_minutes", 60)
         )
     }
 

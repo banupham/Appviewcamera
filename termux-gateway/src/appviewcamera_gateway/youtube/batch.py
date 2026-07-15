@@ -15,7 +15,7 @@ from .index import YouTubeRepository
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
-AUTO_DURATIONS = (15, 30, 60, 90, 120)
+AUTO_DURATIONS = (60, 90, 120)
 
 
 def estimated_uploads_per_day(camera_count: int, target_duration_minutes: int) -> int:
@@ -30,7 +30,7 @@ def quota_aware_target_minutes(
     max_target_uploads_per_day: int = 80,
     upload_limit_per_day: int = 100,
 ) -> dict[str, Any]:
-    requested = requested_minutes if requested_minutes in (15, 30, 60, 120) else 60
+    requested = requested_minutes if requested_minutes in (60, 90, 120) else 60
     safe_limit = max(1, min(max_target_uploads_per_day, upload_limit_per_day))
     target = requested
     for candidate in AUTO_DURATIONS:

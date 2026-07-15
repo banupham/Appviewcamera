@@ -50,7 +50,6 @@ import com.banupham.appviewcamera.viewer.api.CameraSummary
 import com.banupham.appviewcamera.viewer.settings.GatewayConfig
 import com.banupham.appviewcamera.viewer.player.RtspPlayer
 import com.banupham.appviewcamera.viewer.player.PlaybackPlayer
-import com.banupham.appviewcamera.viewer.playback.PlaybackSourceSelector
 import com.banupham.appviewcamera.viewer.live.MultiCameraLiveScreen
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -148,7 +147,6 @@ private fun ViewerScreen(
                     onRefresh = viewModel::loadRecordings,
                     onChangeDay = viewModel::changePlaybackDay,
                     onSelectDay = viewModel::selectPlaybackDay,
-                    onToggleRecording = viewModel::setRecordingEnabled,
                     onSelectClip = viewModel::selectRecording,
                     onProtectClip = viewModel::protectRecording
                 )
@@ -195,7 +193,6 @@ private fun PlaybackScreen(
     onRefresh: (String?) -> Unit,
     onChangeDay: (Int) -> Unit,
     onSelectDay: (String) -> Unit,
-    onToggleRecording: (Boolean, Int) -> Unit,
     onSelectClip: (String) -> Unit,
     onProtectClip: (String, Boolean) -> Unit
 ) {
@@ -205,30 +202,46 @@ private fun PlaybackScreen(
     }
     val selectedClip = state.playbackItems.firstOrNull { it.id == state.selectedPlaybackItemId }
     val uriHandler = LocalUriHandler.current
-    var failedPlaybackItemId by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(selectedClip?.id) { failedPlaybackItemId = null }
+    var playbackSource by remember { mutableStateOf("DRIVE") }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             val recording = state.recordingStatus
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        if (recording?.enabled == true) "Ghi hình đang bật" else "Ghi hình đang tắt",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Text("Lưu trữ tự động", style = MaterialTheme.typography.titleMedium)
+                    Text(if (recording?.enabled == true) "Đang hoạt động" else "Đang khởi tạo")
                     recording?.let {
-                        Text("Drive: ${it.uploadedClips} đã tải lên • ${it.pendingUploads} đang chờ • ${it.failedUploads} lỗi")
+                        Text("Drive: ${it.driveSyncedAtMs?.let(::formatSyncTime) ?: "chưa có segment READY"}")
+                        Text("${it.uploadedClips} đoạn đã đồng bộ • ${it.pendingUploads} đang chờ • ${it.failedUploads} lỗi")
                         it.lastUploadError?.let { error ->
                             Text(error, color = MaterialTheme.colorScheme.error)
                         }
                         Text("Giữ clip cục bộ ${it.localRetentionMinutes} phút • còn ${formatBytes(it.diskFreeBytes)}")
                     }
-                    Button(
-                        onClick = { onToggleRecording(recording?.enabled != true, recording?.localRetentionMinutes ?: 60) }
-                    ) { Text(if (recording?.enabled == true) "Tắt ghi hình" else "Bật ghi hình") }
-                    Text("Clip đầu tiên xuất hiện sau khi segment 60 giây hoàn tất.")
+                    recording?.let { Text("YouTube: đang gom ${it.youtubeBatchMinutes}/${it.youtubeTargetMinutes} phút") }
+                    Text("Segment Drive đầu tiên xuất hiện sau khoảng 60 giây.")
                 }
             }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = playbackSource == "DRIVE",
+                    onClick = { playbackSource = "DRIVE" },
+                    label = { Text("Google Drive") }
+                )
+                FilterChip(
+                    selected = playbackSource == "YOUTUBE",
+                    onClick = { playbackSource = "YOUTUBE" },
+                    label = { Text("YouTube") }
+                )
+            }
+            Text(
+                if (playbackSource == "DRIVE")
+                    "Xem lại nhanh. Video được đồng bộ theo từng đoạn khoảng 1 phút."
+                else
+                    "Video được gom thành đoạn dài để giảm số lần tải lên. Nội dung mới thường cần hơn 1 giờ, cộng thêm thời gian tải lên và xử lý của YouTube, trước khi có thể xem."
+            )
         }
         item {
             Row(
@@ -272,9 +285,13 @@ private fun PlaybackScreen(
             }
         }
         selectedClip?.let { clip ->
-            val effectiveSource = PlaybackSourceSelector.select(
-                clip, primaryFailed = failedPlaybackItemId == clip.id
-            )
+            val effectiveSource = if (playbackSource == "YOUTUBE") {
+                if (clip.youtubeAvailable) "YOUTUBE_READY" else null
+            } else when {
+                clip.driveAvailable -> "DRIVE_READY"
+                clip.localAvailable -> "LOCAL_CACHE"
+                else -> null
+            }
             when (effectiveSource) {
                 "LOCAL_CACHE", "DRIVE_READY" -> item {
                     PlaybackPlayer(
@@ -283,9 +300,7 @@ private fun PlaybackScreen(
                             if (effectiveSource == "LOCAL_CACHE") "local" else "drive"
                         ),
                         apiToken = state.config.apiToken,
-                        onPlaybackError = {
-                            if (clip.youtubeAvailable) failedPlaybackItemId = clip.id
-                        }
+                        onPlaybackError = {}
                     )
                 }
                 "YOUTUBE_READY" -> item {
@@ -301,6 +316,13 @@ private fun PlaybackScreen(
                             }) { Text("Mở YouTube đúng thời điểm") }
                         }
                     }
+                }
+                null -> item {
+                    Text(
+                        if (playbackSource == "YOUTUBE") "Bản YouTube chưa sẵn sàng. Google Drive có thể đã xem được."
+                        else "Bản Google Drive chưa sẵn sàng.",
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
@@ -333,6 +355,9 @@ private fun PlaybackScreen(
 
 private fun formatRecordingTime(value: Long): String =
     SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(value))
+
+private fun formatSyncTime(value: Long): String =
+    "Đã đồng bộ tới " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(value))
 
 private fun formatRecordingDay(value: Long): String =
     SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(value))
@@ -519,7 +544,7 @@ private fun AddYouTubeDialog(
                 }
                 Text("Độ dài batch mong muốn")
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(15, 30, 60, 120).forEach { minutes ->
+                    listOf(60, 90, 120).forEach { minutes ->
                         FilterChip(
                             selected = targetMinutes == minutes,
                             onClick = { targetMinutes = minutes },
@@ -748,7 +773,7 @@ private fun CameraEditorDialog(
                 }
                 item { OutlinedTextField(mainPath, { mainPath = it }, label = { Text("Main RTSP path") }) }
                 item { OutlinedTextField(subPath, { subPath = it }, label = { Text("Sub RTSP path") }) }
-                item { ToggleRow("Ghi hình", recordEnabled) { recordEnabled = it } }
+                item { ToggleRow("Lưu trữ tự động", recordEnabled) { recordEnabled = it } }
                 item { ToggleRow("Phát hiện chuyển động", motionEnabled) { motionEnabled = it } }
             }
         },

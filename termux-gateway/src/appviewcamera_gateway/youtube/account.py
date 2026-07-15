@@ -32,7 +32,7 @@ class YouTubeConfig:
         raw = _read_json(home / "config" / "youtube.json", {})
         section = raw.get("youtube", {}) if isinstance(raw, dict) else {}
         requested = int(section.get("target_youtube_duration_minutes", 60))
-        if requested not in (15, 30, 60, 120):
+        if requested not in (60, 90, 120):
             requested = 60
         retry = tuple(
             max(10, int(value))
@@ -78,8 +78,8 @@ class YouTubeAccountStore:
     def configure(
         self, client_id: str, client_secret: str, target_duration_minutes: int = 60
     ) -> dict[str, Any]:
-        if target_duration_minutes not in (15, 30, 60, 120):
-            raise ValueError("YouTube target duration must be 15, 30, 60 or 120 minutes")
+        if target_duration_minutes not in (60, 90, 120):
+            raise ValueError("YouTube target duration must be 60, 90 or 120 minutes")
         path = self.home / "config" / "youtube.json"
         raw = _read_json(path, {})
         section = dict(raw.get("youtube", {})) if isinstance(raw, dict) else {}

@@ -48,12 +48,12 @@ def test_active_segment_transitions_from_recording_to_local_pending(gateway_home
     assert database.pending_clips(10**15)[0]["id"] == indexed["id"]
 
 
-def test_recording_is_disabled_by_default(gateway_home):
+def test_recording_is_automatic_even_with_legacy_disabled_config(gateway_home):
     settings = GatewaySettings.load(gateway_home)
     manager = RecordingManager(settings, GatewayDatabase(settings.database_path))
 
-    assert manager.status()["enabled"] is False
-    assert manager.update(True, 30)["enabled"] is True
+    assert manager.status()["enabled"] is True
+    assert manager.update(False, 30)["enabled"] is True
     assert manager.config()["local_retention_minutes"] == 30
 
 

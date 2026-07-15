@@ -151,7 +151,9 @@ class CameraStore:
             "sub_path": str(camera.get("sub_path", "")).strip(),
             "relay_path": str(camera.get("relay_path") or camera_id).strip("/"),
             "enabled": bool(camera.get("enabled", True)),
-            "record_enabled": bool(camera.get("record_enabled", True)),
+            "storage_enabled": bool(camera.get("storage_enabled", camera.get("record_enabled", True))),
+            # Backward-compatible response for existing Viewer versions.
+            "record_enabled": bool(camera.get("storage_enabled", camera.get("record_enabled", True))),
             "motion_enabled": bool(camera.get("motion_enabled", False)),
             "event_port": int(camera.get("event_port", 80)),
             "event_path": str(camera.get("event_path") or "ISAPI/Event/notification/alertStream").strip("/"),

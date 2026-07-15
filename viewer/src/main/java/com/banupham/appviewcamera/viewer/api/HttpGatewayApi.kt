@@ -37,6 +37,7 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
             put("relay_path", camera.relayPath)
             put("enabled", camera.enabled)
             put("record_enabled", camera.recordEnabled)
+            put("storage_enabled", camera.recordEnabled)
             put("motion_enabled", camera.motionEnabled)
             put("audio_enabled", camera.audioEnabled)
         }.toString()

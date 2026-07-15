@@ -46,15 +46,17 @@ def test_mediamtx_only_contains_enabled_cameras(gateway_home):
         {"id": "two", "host": "192.0.2.2", "main_path": "live", "relay_path": "two", "enabled": False},
     ]
     rendered = render_mediamtx_config(settings, cameras)
-    assert list(rendered["paths"]) == ["one"]
+    assert list(rendered["paths"]) == ["one", "record_one"]
+    assert "two" not in rendered["paths"]
+    assert "record_two" not in rendered["paths"]
     assert rendered["paths"]["one"]["sourceOnDemand"] is True
 
 
-def test_mediamtx_records_substream_only_when_globally_enabled(gateway_home):
+def test_enabled_camera_records_automatically_in_sixty_second_segments(gateway_home):
     settings = GatewaySettings.load(gateway_home)
     recording_path = gateway_home / "config" / "recording.json"
     recording = json.loads(recording_path.read_text(encoding="utf-8"))
-    recording["recording"]["enabled"] = True
+    recording["recording"]["enabled"] = False
     recording_path.write_text(json.dumps(recording), encoding="utf-8")
     cameras = [
         {
@@ -78,6 +80,16 @@ def test_mediamtx_records_substream_only_when_globally_enabled(gateway_home):
     assert record_path["record"] is True
     assert record_path["recordSegmentDuration"] == "60s"
     assert record_path["recordDeleteAfter"] == "0s"
+
+
+def test_storage_enabled_can_disable_one_camera(gateway_home):
+    settings = GatewaySettings.load(gateway_home)
+    rendered = render_mediamtx_config(settings, [{
+        "id": "one", "host": "192.0.2.1", "main_path": "main",
+        "relay_path": "one", "enabled": True, "storage_enabled": False,
+    }])
+    assert "one" in rendered["paths"]
+    assert "record_one" not in rendered["paths"]
 
 
 def test_hot_reconfigure_does_not_stop_running_mediamtx(gateway_home):
