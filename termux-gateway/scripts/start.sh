@@ -9,6 +9,9 @@ if [ -f "$PID_FILE" ]; then
   PID="$(cat "$PID_FILE")"
   if kill -0 "$PID" 2>/dev/null; then
     echo "Gateway đang chạy với PID $PID"
+    if [ -x "$APP_HOME/scripts/pairing.sh" ]; then
+      "$APP_HOME/scripts/pairing.sh"
+    fi
     exit 0
   fi
   rm -f "$PID_FILE"
