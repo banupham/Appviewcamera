@@ -23,4 +23,16 @@ class HttpProtocolTest {
         assertEquals("Bearer token", request.headers["authorization"])
         assertArrayEquals(body, request.body)
     }
+
+    @Test
+    fun parsesOpenEndedAndSuffixByteRanges() {
+        assertEquals(20L..99L, ByteRange.parse("bytes=20-", 100))
+        assertEquals(90L..99L, ByteRange.parse("bytes=-10", 100))
+        assertEquals(20L..40L, ByteRange.parse("bytes=20-40", 100))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsRangeOutsideFile() {
+        ByteRange.parse("bytes=100-120", 100)
+    }
 }

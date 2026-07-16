@@ -4,9 +4,14 @@ import com.banupham.appviewcamera.gateway.camera.Camera
 import com.banupham.appviewcamera.gateway.camera.CameraDraft
 import com.banupham.appviewcamera.gateway.camera.CameraRepository
 import com.banupham.appviewcamera.gateway.camera.CameraValidator
+import com.banupham.appviewcamera.gateway.recording.PlaybackIndex
+import com.banupham.appviewcamera.gateway.recording.RecordingRepository
+import com.banupham.appviewcamera.gateway.recording.RecordingSettingsStore
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.io.File
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -23,8 +28,12 @@ import org.json.JSONObject
 class GatewayHttpServer(
     private val settings: GatewaySettings,
     private val repository: CameraRepository,
-    private val runtimeState: GatewayRuntimeState
+    private val runtimeState: GatewayRuntimeState,
+    private val recordings: RecordingRepository,
+    private val recordingSettings: RecordingSettingsStore,
+    private val onRecordingSettingsChanged: suspend () -> Unit
 ) : Closeable {
+    private val playback = PlaybackIndex(recordings)
     private val running = AtomicBoolean(false)
     private val executor = Executors.newFixedThreadPool(16)
     private var serverSocket: ServerSocket? = null
@@ -51,7 +60,10 @@ class GatewayHttpServer(
                 val request = HttpRequest.readFrom(it.getInputStream()) ?: return
                 runBlocking { route(request) }
             }.getOrElse { error ->
-                HttpResponse.json(500, JSONObject().put("detail", error.message ?: "Gateway xử lý thất bại"))
+                HttpResponse.json(
+                    if (error is IllegalArgumentException) 400 else 500,
+                    JSONObject().put("detail", error.message ?: "Gateway xử lý thất bại")
+                )
             }
             response.writeTo(it)
         }
@@ -61,7 +73,7 @@ class GatewayHttpServer(
         val uri = URI(request.target)
         val path = uri.path
         if (request.method == "GET" && path == "/health") {
-            return HttpResponse.json(200, JSONObject().put("status", "ok").put("version", "0.2.0"))
+            return HttpResponse.json(200, JSONObject().put("status", "ok").put("version", "0.4.0"))
         }
         if (!authorized(request.headers["authorization"].orEmpty())) {
             return HttpResponse.json(401, JSONObject().put("detail", "Bearer token không hợp lệ"))
@@ -72,11 +84,16 @@ class GatewayHttpServer(
             request.method == "GET" && path == "/api/discovery/candidates" -> configuredCandidates()
             request.method == "POST" && path == "/api/discovery/scan" -> scanCandidates()
             path.startsWith("/api/cameras/") -> cameraMutation(request, path)
-            path.startsWith("/api/storage/") || path.startsWith("/api/recording") ||
-                path.startsWith("/api/recordings") || path.startsWith("/api/playback/") ||
-                path.startsWith("/api/youtube/") -> HttpResponse.json(
+            request.method == "GET" && path == "/api/recording" -> recordingStatus()
+            request.method == "PUT" && path == "/api/recording" -> updateRecording(request)
+            request.method == "GET" && path == "/api/recordings" -> listRecordings(uri)
+            path.startsWith("/api/recordings/") -> recordingMutation(request, path)
+            request.method == "GET" && path == "/api/playback/days" -> playbackDays(uri)
+            request.method == "GET" && path == "/api/playback/timeline" -> playbackTimeline(uri)
+            path.startsWith("/api/playback/items/") -> playbackItem(request, uri, path)
+            path.startsWith("/api/storage/") || path.startsWith("/api/youtube/") -> HttpResponse.json(
                     501,
-                    JSONObject().put("detail", "Android Gateway chưa hỗ trợ ghi hình và lưu trữ; hãy dùng Termux Gateway")
+                    JSONObject().put("detail", "Lớp lưu trữ đám mây Android Gateway đang được cấu hình")
                 )
             else -> HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy endpoint"))
         }
@@ -89,7 +106,7 @@ class GatewayHttpServer(
             put("status", if (runtime.running) "ONLINE" else "DEGRADED")
             put("gateway_id", settings.gatewayId)
             put("gateway_name", settings.gatewayName)
-            put("version", "0.2.0")
+            put("version", "0.4.0")
             put("camera_count", cameras.size)
             put("candidate_count", cameras.size)
             put("mediamtx", JSONObject()
@@ -100,8 +117,8 @@ class GatewayHttpServer(
                 .put("camera_crud", true)
                 .put("rtsp_relay", true)
                 .put("discovery", true)
-                .put("recording", false)
-                .put("playback", false)
+                .put("recording", true)
+                .put("playback", true)
                 .put("google_drive", false)
                 .put("youtube", false))
         })
@@ -112,6 +129,131 @@ class GatewayHttpServer(
         repository.list().forEach { array.put(cameraJson(it)) }
         return HttpResponse.json(200, array)
     }
+
+    private suspend fun recordingStatus(): HttpResponse {
+        val config = recordingSettings.get()
+        val status = recordings.status()
+        return HttpResponse.json(200, JSONObject()
+            .put("enabled", config.effectiveEnabled)
+            .put("configured_enabled", config.enabled)
+            .put("storage_paused", config.storagePaused)
+            .put("local_retention_minutes", config.localRetentionMinutes)
+            .put("storage_mode", "TIERED_LOCAL_CACHE")
+            .put("local_cache_percent", 1)
+            .put("clip_count", status.clipCount)
+            .put("disk_free_bytes", status.diskFreeBytes)
+            .put("disk_total_bytes", status.diskTotalBytes)
+            .put("local_bytes", status.localBytes)
+            .put("local_cache_budget_bytes", status.cacheBudgetBytes)
+            .put("storage_pressure", status.storagePressure)
+            .put("upload_counts", JSONObject()
+                .put("PENDING", status.pendingUploads)
+                .put("FAILED", status.failedUploads)
+                .put("UPLOADED", status.uploadedClips))
+            .put("drive_synced_at_ms", JSONObject.NULL)
+            .put("youtube_batch_minutes", 0)
+            .put("youtube_target_minutes", 360))
+    }
+
+    private suspend fun updateRecording(request: HttpRequest): HttpResponse {
+        val json = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+        val current = recordingSettings.get()
+        val updated = recordingSettings.update(
+            enabled = if (json.has("enabled")) json.getBoolean("enabled") else current.enabled,
+            localRetentionMinutes = if (json.has("local_retention_minutes")) json.getInt("local_retention_minutes") else null
+        )
+        onRecordingSettingsChanged()
+        return recordingStatus().also { check(updated == recordingSettings.get()) }
+    }
+
+    private suspend fun listRecordings(uri: URI): HttpResponse {
+        val query = queryParameters(uri)
+        val clips = recordings.list(
+            query["camera_id"], query["from_ms"]?.toLongOrNull(), query["to_ms"]?.toLongOrNull(),
+            query["limit"]?.toIntOrNull() ?: 200
+        )
+        return HttpResponse.json(200, JSONObject().put("count", clips.size).put("clips", JSONArray().apply {
+            clips.forEach { clip ->
+                put(JSONObject().put("id", clip.id).put("camera_id", clip.cameraId)
+                    .put("started_at_ms", clip.startedAtMs).put("duration_ms", clip.durationMs ?: JSONObject.NULL)
+                    .put("size_bytes", clip.sizeBytes).put("local_state", clip.localState)
+                    .put("upload_state", clip.uploadState).put("last_error", clip.lastError ?: JSONObject.NULL)
+                    .put("protected", clip.protected).put("motion", clip.motion))
+            }
+        }))
+    }
+
+    private suspend fun recordingMutation(request: HttpRequest, path: String): HttpResponse {
+        val suffix = path.removePrefix("/api/recordings/")
+        return when {
+            suffix.endsWith("/protection") && request.method == "PUT" -> {
+                val id = decode(suffix.removeSuffix("/protection"))
+                val protected = JSONObject(request.body.toString(StandardCharsets.UTF_8)).getBoolean("protected")
+                val clip = recordings.setProtected(id, protected)
+                    ?: return HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy clip"))
+                HttpResponse.json(200, playback.itemJson(clip))
+            }
+            suffix.endsWith("/content") && request.method in setOf("GET", "HEAD") -> {
+                val clip = recordings.get(decode(suffix.removeSuffix("/content")))
+                    ?: return HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy clip"))
+                val file = recordings.localFile(clip)
+                    ?: return HttpResponse.json(404, JSONObject().put("detail", "Clip không còn trong cache local"))
+                HttpResponse.file(file, request.headers["range"], request.method == "HEAD")
+            }
+            else -> HttpResponse.json(405, JSONObject().put("detail", "Method không được hỗ trợ"))
+        }
+    }
+
+    private suspend fun playbackDays(uri: URI): HttpResponse {
+        val query = queryParameters(uri)
+        return HttpResponse.json(200, playback.days(query["camera_id"].orEmpty(), query["limit"]?.toIntOrNull() ?: 90))
+    }
+
+    private suspend fun playbackTimeline(uri: URI): HttpResponse {
+        val query = queryParameters(uri)
+        return HttpResponse.json(200, playback.timeline(
+            cameraId = query["camera_id"].orEmpty(),
+            fromMs = query["from_ms"]?.toLongOrNull(),
+            toMs = query["to_ms"]?.toLongOrNull(),
+            day = query["day"],
+            limit = query["limit"]?.toIntOrNull() ?: 500
+        ))
+    }
+
+    private suspend fun playbackItem(request: HttpRequest, uri: URI, path: String): HttpResponse {
+        if (request.method !in setOf("GET", "HEAD")) {
+            return HttpResponse.json(405, JSONObject().put("detail", "Method không được hỗ trợ"))
+        }
+        val suffix = path.removePrefix("/api/playback/items/")
+        return when {
+            suffix.endsWith("/sources") -> playback.sources(decode(suffix.removeSuffix("/sources")))
+                ?.let { HttpResponse.json(200, it) }
+                ?: HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy playback item"))
+            suffix.endsWith("/stream") -> {
+                val id = decode(suffix.removeSuffix("/stream"))
+                val clip = recordings.get(id)
+                    ?: return HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy playback item"))
+                val source = queryParameters(uri)["source"]?.lowercase() ?: "auto"
+                require(source in setOf("auto", "local", "drive")) { "source phải là auto, local hoặc drive" }
+                if (source == "drive") return HttpResponse.json(409, JSONObject()
+                    .put("detail", "Bản Drive chưa được tải vào playback cache")
+                    .put("sources_url", "/api/playback/items/$id/sources"))
+                val file = recordings.localFile(clip)
+                    ?: return HttpResponse.json(409, JSONObject().put("detail", "Nguồn local chưa sẵn sàng"))
+                HttpResponse.file(file, request.headers["range"], request.method == "HEAD")
+            }
+            else -> playback.item(decode(suffix))?.let { HttpResponse.json(200, it) }
+                ?: HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy playback item"))
+        }
+    }
+
+    private fun queryParameters(uri: URI): Map<String, String> = uri.rawQuery.orEmpty()
+        .split('&').filter(String::isNotBlank).associate { part ->
+            val pieces = part.split('=', limit = 2)
+            decode(pieces[0]) to decode(pieces.getOrElse(1) { "" })
+        }
+
+    private fun decode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8.name())
 
     private suspend fun configuredCandidates(): HttpResponse {
         val array = JSONArray()
@@ -192,8 +334,8 @@ class GatewayHttpServer(
         put("relay_path", camera.relayPath)
         put("preview_relay_path", if (camera.subRtspUrl.isBlank()) camera.relayPath else "${camera.relayPath}_sub")
         put("enabled", camera.enabled)
-        put("record_enabled", false)
-        put("storage_enabled", false)
+        put("record_enabled", camera.recordEnabled)
+        put("storage_enabled", camera.recordEnabled)
         put("motion_enabled", camera.motionEnabled)
         put("audio_enabled", camera.audioEnabled)
         put("connection_status", camera.connectionStatus.name)
@@ -305,19 +447,44 @@ data class HttpRequest(
     }
 }
 
-data class HttpResponse(val status: Int, val contentType: String, val body: ByteArray) {
+data class FileSlice(val file: File, val start: Long, val endInclusive: Long)
+
+data class HttpResponse(
+    val status: Int,
+    val contentType: String,
+    val body: ByteArray = byteArrayOf(),
+    val headers: Map<String, String> = emptyMap(),
+    val fileSlice: FileSlice? = null,
+    val headOnly: Boolean = false
+) {
     fun writeTo(socket: Socket) {
         val reason = when (status) {
-            200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"
-            405 -> "Method Not Allowed"; 500 -> "Internal Server Error"; 501 -> "Not Implemented"
+            200 -> "OK"; 206 -> "Partial Content"; 400 -> "Bad Request"; 401 -> "Unauthorized"
+            404 -> "Not Found"; 405 -> "Method Not Allowed"; 409 -> "Conflict"
+            416 -> "Range Not Satisfiable"; 500 -> "Internal Server Error"; 501 -> "Not Implemented"
             else -> "Error"
         }
         val output = socket.getOutputStream()
-        output.write(
-            "HTTP/1.1 $status $reason\r\nContent-Type: $contentType\r\nContent-Length: ${body.size}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n"
-                .toByteArray(StandardCharsets.ISO_8859_1)
-        )
-        output.write(body)
+        val length = fileSlice?.let { it.endInclusive - it.start + 1 } ?: body.size.toLong()
+        val extraHeaders = buildString { headers.forEach { (name, value) -> append("$name: $value\r\n") } }
+        output.write((
+            "HTTP/1.1 $status $reason\r\nContent-Type: $contentType\r\nContent-Length: $length\r\n" +
+                "Connection: close\r\nCache-Control: no-store\r\n$extraHeaders\r\n"
+            ).toByteArray(StandardCharsets.ISO_8859_1))
+        if (!headOnly) {
+            val slice = fileSlice
+            if (slice == null) output.write(body) else RandomAccessFile(slice.file, "r").use { input ->
+                input.seek(slice.start)
+                var remaining = slice.endInclusive - slice.start + 1
+                val buffer = ByteArray(64 * 1024)
+                while (remaining > 0) {
+                    val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                    remaining -= count
+                }
+            }
+        }
         output.flush()
     }
 
@@ -327,5 +494,51 @@ data class HttpResponse(val status: Int, val contentType: String, val body: Byte
             "application/json; charset=utf-8",
             value.toString().toByteArray(StandardCharsets.UTF_8)
         )
+
+        fun file(file: File, rangeHeader: String?, headOnly: Boolean): HttpResponse {
+            val size = file.length()
+            if (size <= 0) return json(404, JSONObject().put("detail", "Clip rỗng"))
+            val range = try {
+                ByteRange.parse(rangeHeader, size)
+            } catch (_: IllegalArgumentException) {
+                return HttpResponse(
+                    status = 416,
+                    contentType = "application/json; charset=utf-8",
+                    body = JSONObject().put("detail", "HTTP Range không hợp lệ").toString().toByteArray(),
+                    headers = mapOf("Content-Range" to "bytes */$size"),
+                    headOnly = headOnly
+                )
+            }
+            return HttpResponse(
+                status = if (rangeHeader.isNullOrBlank()) 200 else 206,
+                contentType = "video/mp4",
+                headers = buildMap {
+                    put("Accept-Ranges", "bytes")
+                    if (!rangeHeader.isNullOrBlank()) put("Content-Range", "bytes ${range.first}-${range.last}/$size")
+                },
+                fileSlice = FileSlice(file, range.first, range.last),
+                headOnly = headOnly
+            )
+        }
+    }
+}
+
+object ByteRange {
+    fun parse(header: String?, size: Long): LongRange {
+        require(size > 0)
+        if (header.isNullOrBlank()) return 0L..(size - 1)
+        require(header.startsWith("bytes=") && !header.contains(','))
+        val value = header.removePrefix("bytes=")
+        val parts = value.split('-', limit = 2)
+        require(parts.size == 2)
+        if (parts[0].isBlank()) {
+            val suffixLength = parts[1].toLongOrNull() ?: throw IllegalArgumentException()
+            require(suffixLength > 0)
+            return (size - suffixLength.coerceAtMost(size))..(size - 1)
+        }
+        val start = parts[0].toLongOrNull() ?: throw IllegalArgumentException()
+        val end = if (parts[1].isBlank()) size - 1 else parts[1].toLongOrNull() ?: throw IllegalArgumentException()
+        require(start in 0 until size && end >= start)
+        return start..end.coerceAtMost(size - 1)
     }
 }

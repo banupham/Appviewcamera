@@ -8,7 +8,8 @@ import org.json.JSONObject
 class MediaMtxConfigWriter(
     private val passwordFor: (Camera) -> String,
     private val recordingRoot: File,
-    private val rtspPort: Int
+    private val rtspPort: Int,
+    private val recordingEnabled: () -> Boolean = { true }
 ) {
     fun render(cameras: List<Camera>): String {
         val paths = JSONObject()
@@ -21,8 +22,8 @@ class MediaMtxConfigWriter(
             val primary = JSONObject()
                 .put("source", source)
                 .put("rtspTransport", "tcp")
-                .put("sourceOnDemand", !camera.recordEnabled)
-            if (camera.recordEnabled) {
+                .put("sourceOnDemand", !(camera.recordEnabled && recordingEnabled()))
+            if (camera.recordEnabled && recordingEnabled()) {
                 val recordPath = File(
                     recordingRoot,
                     "${camera.relayPath}/%path/%Y-%m-%d/%Y-%m-%d_%H-%M-%S-%f"

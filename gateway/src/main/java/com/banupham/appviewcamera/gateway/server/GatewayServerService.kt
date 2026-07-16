@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -25,6 +26,7 @@ class GatewayServerService : Service() {
     private var mediaMtx: MediaMtxSupervisor? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var cameraWatchJob: Job? = null
+    private var recordingScanJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -57,17 +59,28 @@ class GatewayServerService : Service() {
         val settings = container.gatewaySettings.settings.value
         runCatching {
             acquireLocks()
-            val http = GatewayHttpServer(settings, container.cameraRepository, container.gatewayRuntimeState)
             val media = MediaMtxSupervisor(
                 this,
                 container.cameraRepository,
                 container.gatewayRuntimeState,
-                settings.rtspPort
+                settings.rtspPort,
+                recordingEnabled = { container.recordingSettings.get().effectiveEnabled }
             )
-            http.start()
+            val http = GatewayHttpServer(
+                settings,
+                container.cameraRepository,
+                container.gatewayRuntimeState,
+                container.recordingRepository,
+                container.recordingSettings,
+                onRecordingSettingsChanged = {
+                    media.reconfigure(container.cameraRepository.list())
+                }
+            )
             try {
                 media.start(runBlocking { container.cameraRepository.list() })
+                http.start()
             } catch (error: Throwable) {
+                media.close()
                 http.close()
                 throw error
             }
@@ -75,6 +88,19 @@ class GatewayServerService : Service() {
             mediaMtx = media
             cameraWatchJob = serviceScope.launch {
                 container.cameraRepository.observeAll().drop(1).collect(media::reconfigure)
+            }
+            recordingScanJob = serviceScope.launch {
+                while (true) {
+                    val cameraIds = container.cameraRepository.list().map { it.relayPath }.toSet()
+                    val retentionMinutes = container.recordingSettings.get().localRetentionMinutes
+                    runCatching { container.recordingRepository.scan(cameraIds, retentionMinutes) }.getOrNull()?.let { status ->
+                        if (status.storagePressure && container.recordingSettings.get().effectiveEnabled) {
+                            container.recordingSettings.pauseForStorage()
+                            media.reconfigure(container.cameraRepository.list())
+                        }
+                    }
+                    delay(RECORDING_SCAN_INTERVAL_MS)
+                }
             }
             container.gatewayRuntimeState.started()
             val manager = getSystemService(NotificationManager::class.java)
@@ -89,6 +115,8 @@ class GatewayServerService : Service() {
     private fun stopServers() {
         cameraWatchJob?.cancel()
         cameraWatchJob = null
+        recordingScanJob?.cancel()
+        recordingScanJob = null
         runCatching { mediaMtx?.close() }
         runCatching { httpServer?.close() }
         mediaMtx = null
@@ -147,6 +175,7 @@ class GatewayServerService : Service() {
         private const val ACTION_START = "com.banupham.appviewcamera.gateway.START"
         private const val ACTION_STOP = "com.banupham.appviewcamera.gateway.STOP"
         private const val ACTION_RESTART = "com.banupham.appviewcamera.gateway.RESTART"
+        private const val RECORDING_SCAN_INTERVAL_MS = 30_000L
 
         fun start(context: Context) = ContextCompat.startForegroundService(
             context,

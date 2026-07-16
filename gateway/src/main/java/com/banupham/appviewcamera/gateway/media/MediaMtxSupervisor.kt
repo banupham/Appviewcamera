@@ -15,7 +15,8 @@ class MediaMtxSupervisor(
     context: Context,
     repository: CameraRepository,
     private val runtimeState: GatewayRuntimeState,
-    rtspPort: Int
+    rtspPort: Int,
+    recordingEnabled: () -> Boolean
 ) : Closeable {
     private val binary = File(context.applicationInfo.nativeLibraryDir, "libmediamtx.so")
     private val runtimeDirectory = File(context.noBackupFilesDir, "mediamtx")
@@ -24,7 +25,8 @@ class MediaMtxSupervisor(
     private val configWriter = MediaMtxConfigWriter(
         repository::decryptPassword,
         File(context.filesDir, "recordings"),
-        rtspPort
+        rtspPort,
+        recordingEnabled
     )
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private val stopping = AtomicBoolean(false)

@@ -27,6 +27,17 @@ class MediaMtxConfigWriterTest {
         assertTrue(preview.getBoolean("sourceOnDemand"))
     }
 
+    @Test
+    fun disablesRecordingGloballyWithoutDisablingRelay() {
+        val writer = MediaMtxConfigWriter({ "secret" }, File("/recordings"), 8554) { false }
+
+        val primary = JSONObject(writer.render(listOf(camera())))
+            .getJSONObject("paths").getJSONObject("camera01")
+
+        assertFalse(primary.has("record"))
+        assertTrue(primary.getBoolean("sourceOnDemand"))
+    }
+
     private fun camera() = Camera(
         id = 1,
         name = "Camera 01",
