@@ -83,7 +83,7 @@ class MediaMtxSupervisor(
                 if (!stopping.get()) runCatching { spawnLocked() }
                     .onFailure { runtimeState.mediaMtxFailed(it.message ?: "Không thể chạy MediaMTX", restartCount) }
             }
-        }, delaySeconds, TimeUnit.SECONDS)
+        }, delaySeconds.toLong(), TimeUnit.SECONDS)
     }
 
     override fun close() = synchronized(lock) {
