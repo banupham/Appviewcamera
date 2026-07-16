@@ -38,6 +38,21 @@ class RtspUrlFactoryTest {
     }
 
     @Test
+    fun repairsRawAtSignInsidePastedPassword() {
+        val normalized = RtspUrlFactory.normalize(
+            "rtsp://admin:Vin@@192.168.1.20:554/Streaming/Channels/101",
+            "192.168.1.20",
+            554
+        )
+
+        assertEquals(
+            "rtsp://admin:Vin%40@192.168.1.20:554/Streaming/Channels/101",
+            normalized
+        )
+        assertEquals(RtspCredentials("admin", "Vin@"), RtspUrlFactory.credentials(normalized))
+    }
+
+    @Test
     fun normalizesFullUrlToExplicitIpAndPortWithoutLosingVendorQuery() {
         assertEquals(
             "rtsp://admin:secret@192.168.1.20:8554/cam/realmonitor?channel=1&subtype=0",

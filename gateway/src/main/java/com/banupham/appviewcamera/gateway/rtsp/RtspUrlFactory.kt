@@ -18,7 +18,7 @@ object RtspUrlFactory {
     }
 
     fun credentials(url: String): RtspCredentials? {
-        val rawUserInfo = runCatching { URI(url.trim()).rawUserInfo }.getOrNull() ?: return null
+        val rawUserInfo = runCatching { parseRtspUri(url.trim()).rawUserInfo }.getOrNull() ?: return null
         return runCatching {
             val separator = rawUserInfo.indexOf(':')
             val rawUsername = if (separator >= 0) rawUserInfo.substring(0, separator) else rawUserInfo
@@ -47,7 +47,7 @@ object RtspUrlFactory {
             require(isValid(normalized)) { "RTSP path không hợp lệ" }
             return normalized
         }
-        val uri = URI(input)
+        val uri = parseRtspUri(input)
         require(uri.scheme.equals("rtsp", ignoreCase = true)) { "Chỉ hỗ trợ giao thức rtsp://" }
         val credentials = uri.rawUserInfo?.let { "$it@" }.orEmpty()
         val path = uri.rawPath.orEmpty().ifBlank { "/" }
@@ -101,6 +101,34 @@ object RtspUrlFactory {
         value.replace("+", "%2B"),
         StandardCharsets.UTF_8.name()
     )
+
+    /** Accepts a raw '@' inside pasted credentials by treating the final '@' as the host delimiter. */
+    private fun parseRtspUri(value: String): URI {
+        val direct = runCatching { URI(value) }.getOrNull()
+        if (direct?.scheme.equals("rtsp", true) && !direct?.host.isNullOrBlank()) return requireNotNull(direct)
+        require(value.startsWith("rtsp://", true)) { "Chỉ hỗ trợ giao thức rtsp://" }
+        val authorityStart = value.indexOf("//") + 2
+        val authorityEnd = sequenceOf(
+            value.indexOf('/', authorityStart),
+            value.indexOf('?', authorityStart),
+            value.indexOf('#', authorityStart)
+        ).filter { it >= 0 }.minOrNull() ?: value.length
+        val authority = value.substring(authorityStart, authorityEnd)
+        val hostDelimiter = authority.lastIndexOf('@')
+        require(hostDelimiter > 0) { "RTSP URL thiếu hostname" }
+        val rawUserInfo = authority.substring(0, hostDelimiter)
+        val hostAndPort = authority.substring(hostDelimiter + 1)
+        require(hostAndPort.isNotBlank()) { "RTSP URL thiếu hostname" }
+        val separator = rawUserInfo.indexOf(':')
+        val username = decodeUserInfo(if (separator >= 0) rawUserInfo.substring(0, separator) else rawUserInfo)
+        val password = decodeUserInfo(if (separator >= 0) rawUserInfo.substring(separator + 1) else "")
+        val encodedUserInfo = if (separator >= 0) {
+            "${encodeUserInfo(username)}:${encodeUserInfo(password)}"
+        } else encodeUserInfo(username)
+        val repaired = value.substring(0, authorityStart) + encodedUserInfo + "@" +
+            hostAndPort + value.substring(authorityEnd)
+        return URI(repaired).also { require(!it.host.isNullOrBlank()) { "RTSP URL thiếu hostname" } }
+    }
 
     private const val HEX = "0123456789ABCDEF"
     private val SCHEME_PATTERN = Regex("^[A-Za-z][A-Za-z0-9+.-]*://")
