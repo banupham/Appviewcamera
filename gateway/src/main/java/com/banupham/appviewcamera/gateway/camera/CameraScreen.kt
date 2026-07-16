@@ -274,8 +274,8 @@ private fun CameraEditorDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                item { OutlinedTextField(draft.mainRtspUrl, { value -> onUpdate { it.copy(mainRtspUrl = value) } }, label = { Text("Main RTSP URL") }, modifier = Modifier.fillMaxWidth()) }
-                item { OutlinedTextField(draft.subRtspUrl, { value -> onUpdate { it.copy(subRtspUrl = value) } }, label = { Text("Sub RTSP URL (không bắt buộc)") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(draft.mainRtspUrl, { value -> onUpdate { it.copy(mainRtspUrl = value) } }, label = { Text("Main RTSP URL hoặc path") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(draft.subRtspUrl, { value -> onUpdate { it.copy(subRtspUrl = value) } }, label = { Text("Sub RTSP URL/path (không bắt buộc)") }, modifier = Modifier.fillMaxWidth()) }
                 item { OutlinedTextField(draft.relayPath, { value -> onUpdate { it.copy(relayPath = value) } }, label = { Text("Relay path") }, modifier = Modifier.fillMaxWidth()) }
                 item { CameraOption("Bật camera", draft.enabled) { value -> onUpdate { it.copy(enabled = value) } } }
                 item { CameraOption("Cho phép ghi hình", draft.recordEnabled) { value -> onUpdate { it.copy(recordEnabled = value) } } }

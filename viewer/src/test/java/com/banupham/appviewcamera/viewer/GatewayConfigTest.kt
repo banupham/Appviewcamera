@@ -18,4 +18,11 @@ class GatewayConfigTest {
     fun rejectsAFullUrlInHostField() {
         assertTrue(GatewayConfig("http://192.168.1.2", 8080, 8554, "secret").validate().isFailure)
     }
+
+    @Test
+    fun bracketsIpv6HostInRelayUrl() {
+        val config = GatewayConfig("fd00::20", 8080, 8554, "secret")
+        assertEquals("http://[fd00::20]:8080", config.apiBaseUrl)
+        assertEquals("rtsp://[fd00::20]:8554/camera01", config.relayUrl("camera01"))
+    }
 }

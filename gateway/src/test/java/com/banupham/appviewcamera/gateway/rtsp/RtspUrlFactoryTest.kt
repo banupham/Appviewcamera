@@ -28,4 +28,37 @@ class RtspUrlFactoryTest {
             RtspUrlFactory.withCredentials("rtsp://camera.local/live", "user@home", "p@ss word")
         )
     }
+
+    @Test
+    fun extractsEmbeddedCredentialsBeforeRemovingThemFromStorageUrl() {
+        assertEquals(
+            RtspCredentials("admin@home", "p@ss+word"),
+            RtspUrlFactory.credentials("rtsp://admin%40home:p%40ss%2Bword@192.168.1.20/live")
+        )
+    }
+
+    @Test
+    fun normalizesFullUrlToExplicitIpAndPortWithoutLosingVendorQuery() {
+        assertEquals(
+            "rtsp://admin:secret@192.168.1.20:8554/cam/realmonitor?channel=1&subtype=0",
+            RtspUrlFactory.normalize(
+                "rtsp://admin:secret@old-host:554/cam/realmonitor?channel=1&subtype=0",
+                "192.168.1.20",
+                8554
+            )
+        )
+    }
+
+    @Test
+    fun buildsUrlFromBarePathAndSupportsIpv6() {
+        assertEquals(
+            "rtsp://[fd00::20]:554/Streaming/Channels/101",
+            RtspUrlFactory.normalize("/Streaming/Channels/101", "fd00::20", 554)
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsNonRtspSchemeInsteadOfTreatingItAsPath() {
+        RtspUrlFactory.normalize("http://camera/live", "camera", 554)
+    }
 }

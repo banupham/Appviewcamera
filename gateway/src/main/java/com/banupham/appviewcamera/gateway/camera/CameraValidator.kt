@@ -10,9 +10,15 @@ object CameraValidator {
         if (draft.ip.isBlank()) add("Địa chỉ IP hoặc hostname không được để trống")
         val port = draft.port.toIntOrNull()
         if (port == null || port !in 1..65535) add("Cổng phải nằm trong khoảng 1–65535")
-        if (!RtspUrlFactory.isValid(draft.mainRtspUrl)) add("Main RTSP URL phải có dạng rtsp://host/path")
-        if (draft.subRtspUrl.isNotBlank() && !RtspUrlFactory.isValid(draft.subRtspUrl)) {
-            add("Sub RTSP URL không hợp lệ")
+        if (draft.ip.isNotBlank()) {
+            val validationPort = port?.takeIf { it in 1..65535 } ?: 554
+            if (runCatching { RtspUrlFactory.normalize(draft.mainRtspUrl, draft.ip, validationPort) }.isFailure) {
+                add("Main RTSP URL/path không hợp lệ")
+            }
+            if (draft.subRtspUrl.isNotBlank() &&
+                runCatching { RtspUrlFactory.normalize(draft.subRtspUrl, draft.ip, validationPort) }.isFailure) {
+                add("Sub RTSP URL/path không hợp lệ")
+            }
         }
         if (!relayPathPattern.matches(draft.relayPath)) {
             add("Relay path chỉ gồm chữ, số, gạch ngang hoặc gạch dưới")

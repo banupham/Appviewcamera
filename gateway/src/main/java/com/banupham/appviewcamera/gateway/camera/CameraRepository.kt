@@ -22,8 +22,16 @@ class CameraRepository(
 
     suspend fun save(draft: CameraDraft): Long {
         val existing = draft.id.takeIf { it != 0L }?.let { cameraDao.get(it) }
+        val port = draft.port.toInt()
+        val mainUrl = RtspUrlFactory.normalize(draft.mainRtspUrl, draft.ip, port)
+        val subUrl = draft.subRtspUrl.trim().takeIf { it.isNotEmpty() }
+            ?.let { RtspUrlFactory.normalize(it, draft.ip, port) }
+        val embeddedCredentials = RtspUrlFactory.credentials(mainUrl)
+            ?: subUrl?.let(RtspUrlFactory::credentials)
+        val username = draft.username.trim().ifBlank { embeddedCredentials?.username.orEmpty() }
+        val plainPassword = draft.password.ifEmpty { embeddedCredentials?.password.orEmpty() }
         val encryptedPassword = when {
-            draft.password.isNotEmpty() -> credentialCipher.encrypt(draft.password)
+            plainPassword.isNotEmpty() -> credentialCipher.encrypt(plainPassword)
             existing != null -> existing.encryptedPassword
             else -> ""
         }
@@ -31,12 +39,11 @@ class CameraRepository(
             id = draft.id,
             name = draft.name.trim(),
             ip = draft.ip.trim(),
-            port = draft.port.toInt(),
-            username = draft.username.trim(),
+            port = port,
+            username = username,
             encryptedPassword = encryptedPassword,
-            mainRtspUrl = RtspUrlFactory.withoutCredentials(draft.mainRtspUrl.trim()),
-            subRtspUrl = draft.subRtspUrl.trim().takeIf { it.isNotEmpty() }
-                ?.let(RtspUrlFactory::withoutCredentials).orEmpty(),
+            mainRtspUrl = RtspUrlFactory.withoutCredentials(mainUrl),
+            subRtspUrl = subUrl?.let(RtspUrlFactory::withoutCredentials).orEmpty(),
             relayPath = draft.relayPath.trim(),
             enabled = draft.enabled,
             recordEnabled = draft.recordEnabled,

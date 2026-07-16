@@ -1,6 +1,6 @@
 # AppViewCamera
 
-Phiên bản hiện tại: Viewer 1.4.0 / Termux Gateway 1.5.0 / Android Gateway 0.4.0.
+Phiên bản hiện tại: Viewer 1.4.0 / Termux Gateway 1.5.0 / Android Gateway 0.4.1.
 
 Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera có thể chạy
 **Termux Gateway** hoặc **Android Gateway APK**. Đây là hai Gateway độc lập, thay thế cho nhau và

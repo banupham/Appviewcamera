@@ -26,4 +26,18 @@ class CameraValidatorTest {
         )
         assertTrue(errors.size >= 3)
     }
+
+    @Test
+    fun acceptsVendorPathWithoutDuplicatingCameraEndpoint() {
+        val errors = CameraValidator.validate(
+            CameraDraft(
+                name = "Camera",
+                ip = "192.168.1.20",
+                port = "554",
+                mainRtspUrl = "/cam/realmonitor?channel=1&subtype=0",
+                relayPath = "camera01"
+            )
+        )
+        assertTrue(errors.isEmpty())
+    }
 }

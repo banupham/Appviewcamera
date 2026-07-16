@@ -20,10 +20,12 @@ class MediaMtxConfigWriterTest {
         val preview = paths.getJSONObject("camera01_sub")
 
         assertEquals("rtsp://admin:p%40ss%20word@192.168.1.10:554/main", primary.getString("source"))
+        assertEquals("automatic", primary.getString("rtspTransport"))
         assertFalse(primary.getBoolean("sourceOnDemand"))
         assertTrue(primary.getBoolean("record"))
         assertTrue(primary.getString("recordPath").contains("%path"))
         assertEquals("rtsp://admin:p%40ss%20word@192.168.1.10:554/sub", preview.getString("source"))
+        assertEquals("automatic", preview.getString("rtspTransport"))
         assertTrue(preview.getBoolean("sourceOnDemand"))
     }
 

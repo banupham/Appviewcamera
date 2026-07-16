@@ -1,4 +1,4 @@
-# Android Gateway 0.4
+# Android Gateway 0.4.1
 
 Android Gateway là server trung gian độc lập chạy trực tiếp trong một APK ARM64 sideload. Nó dùng
 cùng hợp đồng API với Termux Gateway nhưng hai sản phẩm thay thế cho nhau, không bổ trợ hoặc phụ
@@ -20,6 +20,7 @@ thuộc runtime của nhau.
 - Room recording index được migrate không phá dữ liệu camera, quét lại segment mỗi 30 giây và phục hồi sau reboot.
 - Playback local hỗ trợ danh sách ngày, timeline, nguồn phát, bảo vệ clip và HTTP `Range`/`HEAD`.
 - Hot cache dùng tối đa mục tiêu 1% dung lượng. Gateway không xóa bản local duy nhất chưa được xác minh trên Drive/YouTube; nếu chạm ngưỡng trước khi có bản remote, recording tự tạm dừng.
+- Cấu hình camera chấp nhận URL đầy đủ hoặc vendor path, tự đồng bộ IP/cổng, tách credential nhúng trong URL vào Android Keystore và thử RTSP bằng TCP rồi automatic/UDP.
 
 ## Cách thử
 

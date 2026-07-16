@@ -36,17 +36,22 @@ data class GatewayConfig(
         )
     }
 
-    val apiBaseUrl: String get() = "http://$host:$apiPort"
+    val apiBaseUrl: String get() = "http://${hostForUrl()}:$apiPort"
 
     fun relayUrl(relayPath: String): String {
         require(relayPath.isNotBlank()) { "Relay path không hợp lệ" }
-        return "rtsp://$host:$rtspPort/${relayPath.trim('/')}"
+        return "rtsp://${hostForUrl()}:$rtspPort/${relayPath.trim('/')}"
     }
 
     fun recordingUrl(clipId: String): String = "$apiBaseUrl/api/recordings/$clipId/content"
 
     fun playbackStreamUrl(itemId: String, source: String = "auto"): String =
         "$apiBaseUrl/api/playback/items/$itemId/stream?source=$source"
+
+    private fun hostForUrl(): String {
+        val unwrapped = host.removePrefix("[").removeSuffix("]")
+        return if (unwrapped.contains(':')) "[$unwrapped]" else unwrapped
+    }
 }
 
 data class GatewayCollection(

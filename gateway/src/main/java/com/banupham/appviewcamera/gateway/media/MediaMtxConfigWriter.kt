@@ -21,7 +21,7 @@ class MediaMtxConfigWriter(
             )
             val primary = JSONObject()
                 .put("source", source)
-                .put("rtspTransport", "tcp")
+                .put("rtspTransport", "automatic")
                 .put("sourceOnDemand", !(camera.recordEnabled && recordingEnabled()))
             if (camera.recordEnabled && recordingEnabled()) {
                 val recordPath = File(
@@ -47,7 +47,7 @@ class MediaMtxConfigWriter(
                     "${camera.relayPath}_sub",
                     JSONObject()
                         .put("source", subSource)
-                        .put("rtspTransport", "tcp")
+                        .put("rtspTransport", "automatic")
                         .put("sourceOnDemand", true)
                 )
             }

@@ -73,7 +73,7 @@ class GatewayHttpServer(
         val uri = URI(request.target)
         val path = uri.path
         if (request.method == "GET" && path == "/health") {
-            return HttpResponse.json(200, JSONObject().put("status", "ok").put("version", "0.4.0"))
+            return HttpResponse.json(200, JSONObject().put("status", "ok").put("version", "0.4.1"))
         }
         if (!authorized(request.headers["authorization"].orEmpty())) {
             return HttpResponse.json(401, JSONObject().put("detail", "Bearer token không hợp lệ"))
@@ -106,7 +106,7 @@ class GatewayHttpServer(
             put("status", if (runtime.running) "ONLINE" else "DEGRADED")
             put("gateway_id", settings.gatewayId)
             put("gateway_name", settings.gatewayName)
-            put("version", "0.4.0")
+            put("version", "0.4.1")
             put("camera_count", cameras.size)
             put("candidate_count", cameras.size)
             put("mediamtx", JSONObject()
