@@ -1,9 +1,10 @@
 # AppViewCamera
 
-Phiên bản hiện tại: Viewer 1.4.0 / Gateway 1.5.0.
+Phiên bản hiện tại: Viewer 1.4.0 / Termux Gateway 1.5.0 / Android Gateway 0.2.0.
 
-Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera chạy
-**Termux Gateway**, còn điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua
+Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera có thể chạy
+**Termux Gateway** (đầy đủ ghi hình/lưu trữ) hoặc **Android Gateway APK** (gọn nhẹ cho live RTSP
+và quản lý camera). Điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua LAN hoặc
 Tailscale như một mạng IP riêng.
 
 ```text
@@ -21,8 +22,22 @@ Camera IP --RTSP/LAN--> Termux Gateway --RTSP/API/Tailscale--> Viewer APK
 - Giai đoạn lưu trữ: upload queue bền vững, nhiều Drive, quota thật, tự chuyển Drive và retention 90% → 80% — đã triển khai.
 - Giai đoạn ghi/xem lại: fMP4, SQLite, chọn ngày, phát local/Drive, bảo vệ clip và motion ISAPI — đã triển khai.
 
-Gateway APK cũ đang được giữ làm bản đối chiếu cho đến khi Termux Gateway được kiểm thử trên
-điện thoại thật. Viewer APK tiếp tục được phát triển và build trên GitHub.
+Android Gateway APK đã được nâng thành server trung gian độc lập: foreground service, API có
+Bearer token, QR pairing, camera CRUD, quét LAN giới hạn và RTSP proxy TCP có Basic/Digest auth.
+Termux Gateway vẫn là lựa chọn cho recording, playback, Drive và YouTube.
+
+## Android Gateway
+
+Android Gateway phù hợp khi chỉ cần xem live và không muốn cài môi trường Termux:
+
+- API tương thích Viewer tại `:8080`, RTSP proxy tại `:8554`.
+- Mật khẩu camera mã hóa trong Android Keystore và không trả về API.
+- QR/URI pairing chứa gateway ID, địa chỉ LAN, hai cổng và token ngẫu nhiên 256-bit.
+- Foreground service giữ CPU/Wi-Fi hoạt động; có tùy chọn tự chạy sau reboot.
+- Camera CRUD và quét nhanh các cổng camera phổ biến trong subnet `/24` hiện tại.
+- RTSP proxy chuyển tiếp không transcode, tự xử lý Basic/Digest authentication với camera.
+
+Chi tiết cài đặt, API và giới hạn: [docs/android-gateway.md](docs/android-gateway.md).
 
 ## Termux Gateway MVP
 
@@ -49,7 +64,7 @@ Hướng dẫn cài và thử trên điện thoại: [termux-gateway/README.md](
 
 Hai workflow độc lập:
 
-- `Android build`: test Kotlin và tạo `gateway-debug.apk`, `viewer-debug.apk`.
+- `Android build`: test Kotlin và tạo Android Gateway `gateway-debug.apk`, Viewer `viewer-debug.apk`.
 - `Termux Gateway`: test Python/shell và tạo `termux-gateway.zip`.
 
 Máy hiện tại không cần Android Studio hoặc Android SDK. Kết quả chính thức được xác nhận bằng

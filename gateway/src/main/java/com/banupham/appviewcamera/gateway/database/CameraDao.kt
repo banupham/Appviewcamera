@@ -10,8 +10,14 @@ interface CameraDao {
     @Query("SELECT * FROM cameras ORDER BY name COLLATE NOCASE, id")
     fun observeAll(): Flow<List<CameraEntity>>
 
+    @Query("SELECT * FROM cameras ORDER BY name COLLATE NOCASE, id")
+    suspend fun list(): List<CameraEntity>
+
     @Query("SELECT * FROM cameras WHERE id = :id")
     suspend fun get(id: Long): CameraEntity?
+
+    @Query("SELECT * FROM cameras WHERE relayPath = :relayPath LIMIT 1")
+    suspend fun getByRelayPath(relayPath: String): CameraEntity?
 
     @Upsert
     suspend fun upsert(camera: CameraEntity): Long

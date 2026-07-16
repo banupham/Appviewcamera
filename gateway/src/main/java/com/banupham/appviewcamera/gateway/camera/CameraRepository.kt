@@ -16,6 +16,10 @@ class CameraRepository(
         cameras.map { it.toDomain() }
     }
 
+    suspend fun list(): List<Camera> = cameraDao.list().map { it.toDomain() }
+
+    suspend fun getByRelayPath(relayPath: String): Camera? = cameraDao.getByRelayPath(relayPath)?.toDomain()
+
     suspend fun save(draft: CameraDraft): Long {
         val existing = draft.id.takeIf { it != 0L }?.let { cameraDao.get(it) }
         val encryptedPassword = when {

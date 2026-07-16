@@ -17,5 +17,8 @@
 15. ✅ Quản lý Drive từ Viewer.
 16. 🔄 Watchdog, retry, boot và log rotation đã có; đang chờ kiểm thử mất mạng/reboot trên thiết bị.
 
-Gateway APK thử nghiệm được giữ đến khi Giai đoạn 3 chạy trên điện thoại thật. Sau mỗi giai đoạn,
-GitHub Actions phải xanh và artifact tương ứng phải tải được.
+17. ✅ Android Gateway 0.2: foreground service, Bearer API, QR pairing, camera CRUD, LAN scan và RTSP proxy.
+18. ⏳ Kiểm thử RTSP proxy Android trên camera Hikvision/Dahua thật, gồm Digest, reconnect và nhiều Viewer.
+19. ⏳ Nếu cần recording trên Android Gateway, đánh giá media engine native riêng; không giả lập MediaMTX bằng Media3.
+
+Sau mỗi giai đoạn, GitHub Actions phải xanh và artifact tương ứng phải tải được.
