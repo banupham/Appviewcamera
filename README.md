@@ -1,10 +1,10 @@
 # AppViewCamera
 
-Phiên bản hiện tại: Viewer 1.4.0 / Termux Gateway 1.5.0 / Android Gateway 0.2.0.
+Phiên bản hiện tại: Viewer 1.4.0 / Termux Gateway 1.5.0 / Android Gateway 0.3.0.
 
 Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera có thể chạy
-**Termux Gateway** (đầy đủ ghi hình/lưu trữ) hoặc **Android Gateway APK** (gọn nhẹ cho live RTSP
-và quản lý camera). Điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua LAN hoặc
+**Termux Gateway** hoặc **Android Gateway APK**. Đây là hai Gateway độc lập, thay thế cho nhau và
+dùng cùng hợp đồng API; không Gateway nào cần Gateway còn lại. Điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua LAN hoặc
 Tailscale như một mạng IP riêng.
 
 ```text
@@ -22,20 +22,20 @@ Camera IP --RTSP/LAN--> Termux Gateway --RTSP/API/Tailscale--> Viewer APK
 - Giai đoạn lưu trữ: upload queue bền vững, nhiều Drive, quota thật, tự chuyển Drive và retention 90% → 80% — đã triển khai.
 - Giai đoạn ghi/xem lại: fMP4, SQLite, chọn ngày, phát local/Drive, bảo vệ clip và motion ISAPI — đã triển khai.
 
-Android Gateway APK đã được nâng thành server trung gian độc lập: foreground service, API có
-Bearer token, QR pairing, camera CRUD, quét LAN giới hạn và RTSP proxy TCP có Basic/Digest auth.
-Termux Gateway vẫn là lựa chọn cho recording, playback, Drive và YouTube.
+Android Gateway APK là server trung gian độc lập: foreground service, API có Bearer token, QR
+pairing, camera CRUD, quét LAN và MediaMTX ARM64 nhúng trong APK cho shared ingest/recording.
 
 ## Android Gateway
 
-Android Gateway phù hợp khi chỉ cần xem live và không muốn cài môi trường Termux:
+Android Gateway là lựa chọn APK độc lập, không cần cài môi trường Termux:
 
 - API tương thích Viewer tại `:8080`, RTSP proxy tại `:8554`.
 - Mật khẩu camera mã hóa trong Android Keystore và không trả về API.
 - QR/URI pairing chứa gateway ID, địa chỉ LAN, hai cổng và token ngẫu nhiên 256-bit.
 - Foreground service giữ CPU/Wi-Fi hoạt động; có tùy chọn tự chạy sau reboot.
 - Camera CRUD và quét nhanh các cổng camera phổ biến trong subnet `/24` hiện tại.
-- RTSP proxy chuyển tiếp không transcode, tự xử lý Basic/Digest authentication với camera.
+- MediaMTX chuyển tiếp không transcode, dùng chung một main ingest cho live và recording.
+- Viewer dùng substream on-demand trong lưới và main stream khi phóng to; tự giới hạn 4/8/16 theo decoder/RAM.
 
 Chi tiết cài đặt, API và giới hạn: [docs/android-gateway.md](docs/android-gateway.md).
 

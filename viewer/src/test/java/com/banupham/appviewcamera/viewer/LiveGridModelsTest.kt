@@ -57,7 +57,7 @@ class LiveGridModelsTest {
     fun `grid uses substream and expanded camera uses main stream`() {
         val camera = camera("camera01")
 
-        assertEquals("camera01", liveRelayPath(camera, expanded = false))
+        assertEquals("camera01_sub", liveRelayPath(camera, expanded = false))
         assertEquals("camera01", liveRelayPath(camera, expanded = true))
     }
 
@@ -80,6 +80,7 @@ class LiveGridModelsTest {
         relayPath = id,
         enabled = true,
         recordingEnabled = true,
-        motionEnabled = false
+        motionEnabled = false,
+        previewRelayPath = "${id}_sub"
     )
 }

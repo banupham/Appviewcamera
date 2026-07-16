@@ -181,7 +181,7 @@ private fun GatewayServerCard(
                 TextButton(onClick = onRotateToken) { Text("Đổi token") }
             }
             Text(
-                "Live RTSP và quản lý camera đã hỗ trợ. Ghi hình, Playback, Drive và YouTube vẫn cần Termux Gateway.",
+                "MediaMTX dùng chung ingest cho live và ghi fMP4; lưới Viewer tự dùng substream để giảm tải.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -278,6 +278,8 @@ private fun CameraEditorDialog(
                 item { OutlinedTextField(draft.subRtspUrl, { value -> onUpdate { it.copy(subRtspUrl = value) } }, label = { Text("Sub RTSP URL (không bắt buộc)") }, modifier = Modifier.fillMaxWidth()) }
                 item { OutlinedTextField(draft.relayPath, { value -> onUpdate { it.copy(relayPath = value) } }, label = { Text("Relay path") }, modifier = Modifier.fillMaxWidth()) }
                 item { CameraOption("Bật camera", draft.enabled) { value -> onUpdate { it.copy(enabled = value) } } }
+                item { CameraOption("Cho phép ghi hình", draft.recordEnabled) { value -> onUpdate { it.copy(recordEnabled = value) } } }
+                item { CameraOption("Phát hiện chuyển động", draft.motionEnabled) { value -> onUpdate { it.copy(motionEnabled = value) } } }
                 item { CameraOption("Âm thanh", draft.audioEnabled) { value -> onUpdate { it.copy(audioEnabled = value) } } }
                 items(errors) { error -> Text(error, color = MaterialTheme.colorScheme.error) }
             }

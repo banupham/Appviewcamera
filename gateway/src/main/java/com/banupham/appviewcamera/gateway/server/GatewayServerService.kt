@@ -11,10 +11,20 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import com.banupham.appviewcamera.gateway.GatewayApplication
+import com.banupham.appviewcamera.gateway.media.MediaMtxSupervisor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class GatewayServerService : Service() {
     private var httpServer: GatewayHttpServer? = null
-    private var rtspServer: RtspProxyServer? = null
+    private var mediaMtx: MediaMtxSupervisor? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var cameraWatchJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -42,22 +52,30 @@ class GatewayServerService : Service() {
     }
 
     private fun startServers() {
-        if (httpServer != null || rtspServer != null) return
+        if (httpServer != null || mediaMtx != null) return
         startForeground(NOTIFICATION_ID, notification("API :8080 • RTSP :8554"))
         val settings = container.gatewaySettings.settings.value
         runCatching {
             acquireLocks()
             val http = GatewayHttpServer(settings, container.cameraRepository, container.gatewayRuntimeState)
-            val rtsp = RtspProxyServer(settings.rtspPort, container.cameraRepository, container.gatewayRuntimeState)
+            val media = MediaMtxSupervisor(
+                this,
+                container.cameraRepository,
+                container.gatewayRuntimeState,
+                settings.rtspPort
+            )
             http.start()
             try {
-                rtsp.start()
+                media.start(runBlocking { container.cameraRepository.list() })
             } catch (error: Throwable) {
                 http.close()
                 throw error
             }
             httpServer = http
-            rtspServer = rtsp
+            mediaMtx = media
+            cameraWatchJob = serviceScope.launch {
+                container.cameraRepository.observeAll().drop(1).collect(media::reconfigure)
+            }
             container.gatewayRuntimeState.started()
             val manager = getSystemService(NotificationManager::class.java)
             manager.notify(NOTIFICATION_ID, notification("API :${settings.apiPort} • RTSP :${settings.rtspPort}"))
@@ -69,9 +87,11 @@ class GatewayServerService : Service() {
     }
 
     private fun stopServers() {
-        runCatching { rtspServer?.close() }
+        cameraWatchJob?.cancel()
+        cameraWatchJob = null
+        runCatching { mediaMtx?.close() }
         runCatching { httpServer?.close() }
-        rtspServer = null
+        mediaMtx = null
         httpServer = null
         releaseLocks()
         container.gatewayRuntimeState.stopped()

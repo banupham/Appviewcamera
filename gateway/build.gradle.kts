@@ -1,3 +1,7 @@
+import java.net.URI
+import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,9 +16,12 @@ android {
         applicationId = "com.banupham.appviewcamera.gateway"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -31,7 +38,78 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
+    sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("generated/mediamtx/jniLibs"))
+    packaging {
+        jniLibs.keepDebugSymbols += "**/libmediamtx.so"
+    }
 }
+
+val mediaMtxVersion = "1.18.2"
+val mediaMtxArchiveSha256 = "c78aa7a1bdab94b2b02be364661f17802143215dba37e1fa67c3e0849248b485"
+val mediaMtxOutput = layout.buildDirectory.file("generated/mediamtx/jniLibs/arm64-v8a/libmediamtx.so")
+
+val prepareMediaMtx by tasks.registering {
+    description = "Download and verify the ARM64 MediaMTX engine packaged in Android Gateway"
+    outputs.file(mediaMtxOutput)
+    doLast {
+        val output = mediaMtxOutput.get().asFile
+        output.parentFile.mkdirs()
+        if (output.isFile && output.length() > 0) return@doLast
+
+        val archive = layout.buildDirectory.file("downloads/mediamtx-v$mediaMtxVersion-linux-arm64.tar.gz").get().asFile
+        archive.parentFile.mkdirs()
+        if (!archive.isFile) {
+            URI(
+                "https://github.com/bluenviron/mediamtx/releases/download/v$mediaMtxVersion/" +
+                    "mediamtx_v${mediaMtxVersion}_linux_arm64.tar.gz"
+            ).toURL().openStream().use { input -> archive.outputStream().use(input::copyTo) }
+        }
+        val actualHash = MessageDigest.getInstance("SHA-256").digest(archive.readBytes())
+            .joinToString("") { "%02x".format(it) }
+        check(actualHash == mediaMtxArchiveSha256) {
+            "MediaMTX checksum mismatch: expected $mediaMtxArchiveSha256, got $actualHash"
+        }
+
+        GZIPInputStream(archive.inputStream()).use { tar ->
+            val header = ByteArray(512)
+            var extracted = false
+            while (tar.readNBytes(header, 0, header.size) == header.size) {
+                if (header.all { it == 0.toByte() }) break
+                val name = header.copyOfRange(0, 100).takeWhile { it != 0.toByte() }
+                    .toByteArray().toString(Charsets.UTF_8)
+                val sizeText = header.copyOfRange(124, 136).takeWhile { it != 0.toByte() && it != ' '.code.toByte() }
+                    .toByteArray().toString(Charsets.US_ASCII).trim()
+                val size = sizeText.ifBlank { "0" }.toLong(8)
+                if (name == "mediamtx") {
+                    output.outputStream().use { target ->
+                        var remaining = size
+                        val buffer = ByteArray(64 * 1024)
+                        while (remaining > 0) {
+                            val read = tar.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                            check(read > 0) { "MediaMTX archive ended early" }
+                            target.write(buffer, 0, read)
+                            remaining -= read
+                        }
+                    }
+                    extracted = true
+                } else {
+                    var remaining = size
+                    while (remaining > 0) {
+                        val skipped = tar.skip(remaining)
+                        check(skipped > 0) { "MediaMTX archive ended early" }
+                        remaining -= skipped
+                    }
+                }
+                val padding = (512 - (size % 512)) % 512
+                if (padding > 0) tar.skipNBytes(padding)
+                if (extracted) break
+            }
+            check(extracted && output.length() > 0) { "MediaMTX binary not found in archive" }
+        }
+    }
+}
+
+tasks.named("preBuild").configure { dependsOn(prepareMediaMtx) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
@@ -55,4 +133,5 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.json:json:20240303")
 }

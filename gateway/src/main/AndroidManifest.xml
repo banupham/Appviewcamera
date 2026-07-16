@@ -12,6 +12,7 @@
     <application
         android:name=".GatewayApplication"
         android:allowBackup="false"
+        android:extractNativeLibs="true"
         android:label="Camera Gateway"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">

@@ -141,7 +141,7 @@ fun MultiCameraLiveScreen(state: ViewerUiState, onSelectCamera: (String) -> Unit
             )
         }
         LazyVerticalGrid(
-            columns = GridCells.Fixed(1),
+            columns = GridCells.Fixed(layout.columns),
             modifier = Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -211,6 +211,12 @@ internal fun detectDecoderCapacity(context: Context): Int = runCatching {
                 .mapNotNull { type -> runCatching { codec.getCapabilitiesForType(type).maxSupportedInstances }.getOrNull() }
         }
         .maxOrNull()
-    val lowRam = (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).isLowRamDevice
-    minOf(reported ?: if (lowRam) 1 else 2, if (lowRam) 2 else 4).coerceAtLeast(1)
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    val deviceLimit = when {
+        activityManager.isLowRamDevice -> 2
+        activityManager.memoryClass >= 512 -> 16
+        activityManager.memoryClass >= 256 -> 9
+        else -> 4
+    }
+    minOf(reported ?: deviceLimit, deviceLimit).coerceAtLeast(1)
 }.getOrDefault(1)

@@ -6,8 +6,9 @@ enum class LiveLayout(val slots: Int, val columns: Int, val selectable: Boolean 
     ONE(1, 1),
     TWO(2, 2),
     FOUR(4, 2),
-    SIX(6, 3, false),
-    NINE(9, 3, false);
+    SIX(6, 3),
+    NINE(9, 3),
+    SIXTEEN(16, 4);
 
     companion object {
         fun fromSlots(slots: Int): LiveLayout = entries.firstOrNull { it.slots == slots } ?: ONE
@@ -51,7 +52,7 @@ fun buildLiveGridPlan(
 }
 
 fun liveRelayPath(camera: CameraSummary, expanded: Boolean): String =
-    camera.relayPath
+    if (expanded || camera.previewRelayPath.isBlank()) camera.relayPath else camera.previewRelayPath
 
 object RtspRetryPolicy {
     private val delays = longArrayOf(1_000, 3_000, 5_000, 10_000)

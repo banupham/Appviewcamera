@@ -1,8 +1,8 @@
-# Android Gateway 0.2
+# Android Gateway 0.3
 
-Android Gateway là server trung gian gọn nhẹ chạy trực tiếp trong một APK. Nó dùng cùng pairing
-URI và các endpoint camera chính với Termux Gateway, vì vậy Viewer hiện tại có thể ghép nối mà
-không cần cấu hình riêng.
+Android Gateway là server trung gian độc lập chạy trực tiếp trong một APK ARM64 sideload. Nó dùng
+cùng hợp đồng API với Termux Gateway nhưng hai sản phẩm thay thế cho nhau, không bổ trợ hoặc phụ
+thuộc runtime của nhau.
 
 ## Phạm vi đã hoàn thiện
 
@@ -11,8 +11,9 @@ không cần cấu hình riêng.
 - QR pairing và nút sao chép URI `appviewcamera://pair?...`.
 - `GET /health`, `GET /api/status`, camera CRUD và discovery API tương thích Viewer.
 - Quét TCP có giới hạn trong subnet IPv4 `/24` hiện tại, trên cổng 554, 80, 8000 và 8554.
-- RTSP proxy theo relay path, không transcode, ưu tiên RTSP interleaved/TCP từ Viewer.
-- Proxy tự đăng nhập upstream bằng Basic hoặc Digest MD5/MD5-sess; mật khẩu camera không đi tới Viewer.
+- MediaMTX ARM64 1.18.2 được tải bằng checksum cố định khi build và đóng trực tiếp trong APK.
+- Main ingest dùng chung cho relay và fMP4 recording, tránh hai session cạnh tranh trên camera.
+- Substream chỉ mở on-demand cho lưới Viewer; phóng to tự chuyển về main stream.
 - Mật khẩu tiếp tục được lưu bằng Android Keystore; API danh sách camera không trả password.
 - Partial wake lock và high-performance Wi-Fi lock trong lúc service chạy.
 - Tùy chọn tự chạy sau `BOOT_COMPLETED`.
@@ -45,18 +46,12 @@ Các endpoint hoạt động:
 - `GET /api/discovery/candidates`
 - `POST /api/discovery/scan`
 
-Endpoint recording/playback/storage/YouTube trả HTTP 501 với thông báo rõ ràng. Viewer không nên
-hiển thị chúng như một capability khả dụng khi `capabilities` trong `/api/status` là `false`.
+Kiến trúc storage đích gồm recording index, local 1% hot cache, nhiều Drive và YouTube Private,
+tất cả nằm trong Android Gateway. Credential loại Desktop OAuth và refresh token chỉ được lưu mã
+hóa trên Gateway; các worker storage/playback đang được chuyển sang Kotlin sau media core 0.3.
 
-## Giới hạn có chủ đích
-
-Android Gateway 0.2 chưa ghi hình, chưa upload Drive/YouTube và chưa phục vụ playback. Media3 là
-RTSP client/player, không phải media relay server. Bản này dùng RTSP application proxy riêng cho
-live view; Termux Gateway + MediaMTX vẫn là cấu hình đầy đủ cho recording và lưu trữ.
-
-RTSP proxy cần kiểm thử thiết bị thật với từng hãng camera. Nó hỗ trợ luồng xem RTSP/TCP và auth
-phổ biến; các camera chỉ cho RTP/UDP, yêu cầu TLS riêng, hoặc cơ chế auth độc quyền có thể không
-tương thích.
+Mục tiêu tải tự thích ứng là 4/8/16 camera 1080p tùy RAM, decoder và số instance codec phần cứng.
+Không transcode main stream; lưới nhiều camera phải cấu hình substream H.264 nhẹ trên camera.
 
 Foreground service loại `specialUse` phù hợp bản cài nội bộ/sideload. Nếu phát hành Google Play,
 cần khai báo use case foreground service trong Play Console và kiểm tra lại chính sách hiện hành.

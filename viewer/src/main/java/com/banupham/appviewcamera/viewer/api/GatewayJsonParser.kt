@@ -25,7 +25,8 @@ object GatewayJsonParser {
                         recordingEnabled = if (item.has("storage_enabled")) {
                             item.optBoolean("storage_enabled", true)
                         } else item.optBoolean("record_enabled", true),
-                        motionEnabled = item.optBoolean("motion_enabled", false)
+                        motionEnabled = item.optBoolean("motion_enabled", false),
+                        previewRelayPath = item.optString("preview_relay_path")
                     )
                 )
             }

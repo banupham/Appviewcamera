@@ -11,7 +11,8 @@ data class CameraSummary(
     val relayPath: String,
     val enabled: Boolean,
     val recordingEnabled: Boolean,
-    val motionEnabled: Boolean
+    val motionEnabled: Boolean,
+    val previewRelayPath: String = ""
 )
 
 data class DiscoveryCandidate(

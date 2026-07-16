@@ -40,7 +40,7 @@ data class CameraDraft(
     val subRtspUrl: String = "",
     val relayPath: String = "",
     val enabled: Boolean = true,
-    val recordEnabled: Boolean = false,
+    val recordEnabled: Boolean = true,
     val motionEnabled: Boolean = false,
     val audioEnabled: Boolean = false
 )
