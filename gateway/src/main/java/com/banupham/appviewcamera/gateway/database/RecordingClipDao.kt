@@ -51,8 +51,8 @@ interface RecordingClipDao {
     @Upsert
     suspend fun upsert(clip: RecordingClipEntity)
 
-    @Query("UPDATE recording_clips SET protected = :protected, stateUpdatedAtMs = :nowMs WHERE id = :id")
-    suspend fun setProtected(id: String, protected: Boolean, nowMs: Long): Int
+    @Query("UPDATE recording_clips SET protected = :isProtected, stateUpdatedAtMs = :nowMs WHERE id = :id")
+    suspend fun setProtected(id: String, isProtected: Boolean, nowMs: Long): Int
 
     @Query(
         """

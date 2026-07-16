@@ -28,7 +28,7 @@ class RecordingPolicyTest {
     fun neverDeletesOnlyUnverifiedCopyOrProtectedClip() {
         val pending = clip()
         assertFalse(RetentionPolicy.canDeleteLocal(pending))
-        assertFalse(RetentionPolicy.canDeleteLocal(pending.copy(protected = true, youtubeStatus = "YOUTUBE_READY", youtubeVideoId = "video")))
+        assertFalse(RetentionPolicy.canDeleteLocal(pending.copy(isProtected = true, youtubeStatus = "YOUTUBE_READY", youtubeVideoId = "video")))
         assertTrue(RetentionPolicy.canDeleteLocal(pending.copy(youtubeStatus = "YOUTUBE_READY", youtubeVideoId = "video")))
         assertTrue(RetentionPolicy.canDeleteLocal(pending.copy(
             uploadState = "UPLOADED", remoteId = "drive-1", remoteFileId = "file-1",

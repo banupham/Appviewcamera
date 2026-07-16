@@ -178,7 +178,7 @@ class GatewayHttpServer(
                     .put("started_at_ms", clip.startedAtMs).put("duration_ms", clip.durationMs ?: JSONObject.NULL)
                     .put("size_bytes", clip.sizeBytes).put("local_state", clip.localState)
                     .put("upload_state", clip.uploadState).put("last_error", clip.lastError ?: JSONObject.NULL)
-                    .put("protected", clip.protected).put("motion", clip.motion))
+                    .put("protected", clip.isProtected).put("motion", clip.motion))
             }
         }))
     }
@@ -188,8 +188,8 @@ class GatewayHttpServer(
         return when {
             suffix.endsWith("/protection") && request.method == "PUT" -> {
                 val id = decode(suffix.removeSuffix("/protection"))
-                val protected = JSONObject(request.body.toString(StandardCharsets.UTF_8)).getBoolean("protected")
-                val clip = recordings.setProtected(id, protected)
+                val isProtected = JSONObject(request.body.toString(StandardCharsets.UTF_8)).getBoolean("protected")
+                val clip = recordings.setProtected(id, isProtected)
                     ?: return HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy clip"))
                 HttpResponse.json(200, playback.itemJson(clip))
             }

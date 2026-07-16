@@ -1,6 +1,7 @@
 package com.banupham.appviewcamera.gateway.database
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -43,6 +44,6 @@ data class RecordingClipEntity(
     val localCachedAtMs: Long? = null,
     val localDeletedAtMs: Long? = null,
     val stateUpdatedAtMs: Long = 0,
-    val protected: Boolean = false,
+    @ColumnInfo(name = "protected") val isProtected: Boolean = false,
     val motion: Boolean = false
 )

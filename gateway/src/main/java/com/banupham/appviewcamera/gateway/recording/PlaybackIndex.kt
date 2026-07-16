@@ -82,7 +82,7 @@ class PlaybackIndex(
             .put("id", clip.id).put("camera_id", clip.cameraId)
             .put("start_time", clip.startedAtMs).put("end_time", clip.startedAtMs + (clip.durationMs ?: 0))
             .put("duration", clip.durationMs ?: JSONObject.NULL).put("size_bytes", clip.sizeBytes)
-            .put("motion", clip.motion).put("protected", clip.protected)
+            .put("motion", clip.motion).put("protected", clip.isProtected)
             .put("local_available", local).put("drive_available", drive).put("youtube_available", youtube)
             .put("youtube_video_id", if (youtube) clip.youtubeVideoId else JSONObject.NULL)
             .put("youtube_start_offset_seconds", clip.youtubeStartOffsetSeconds)

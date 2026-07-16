@@ -168,7 +168,7 @@ class RecordingRepository(
 }
 
 object RetentionPolicy {
-    fun canDeleteLocal(clip: RecordingClipEntity): Boolean = !clip.protected &&
+    fun canDeleteLocal(clip: RecordingClipEntity): Boolean = !clip.isProtected &&
         clip.clipState != "RECORDING" && (clip.remoteCopyVerified() || clip.youtubeCopyVerified())
 }
 
