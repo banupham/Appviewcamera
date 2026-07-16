@@ -185,8 +185,8 @@ class GatewayHttpServer(
         put("host", camera.ip)
         put("port", camera.port)
         put("username", camera.username)
-        put("main_path", URI(camera.mainRtspUrl).rawPath.orEmpty().trimStart('/'))
-        put("sub_path", camera.subRtspUrl.takeIf(String::isNotBlank)?.let { URI(it).rawPath.orEmpty().trimStart('/') }.orEmpty())
+        put("main_path", pathAndQuery(camera.mainRtspUrl))
+        put("sub_path", camera.subRtspUrl.takeIf(String::isNotBlank)?.let(::pathAndQuery).orEmpty())
         put("relay_path", camera.relayPath)
         put("enabled", camera.enabled)
         put("record_enabled", false)
@@ -201,6 +201,11 @@ class GatewayHttpServer(
         if (path.startsWith("rtsp://", true)) return path
         val displayHost = if (host.contains(':')) "[$host]" else host
         return "rtsp://$displayHost:$port/${path.trimStart('/')}"
+    }
+
+    private fun pathAndQuery(url: String): String {
+        val uri = URI(url)
+        return uri.rawPath.orEmpty().trimStart('/') + uri.rawQuery?.let { "?$it" }.orEmpty()
     }
 
     private fun authorized(header: String): Boolean {
