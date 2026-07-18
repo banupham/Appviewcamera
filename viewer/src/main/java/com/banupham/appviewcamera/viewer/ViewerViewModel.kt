@@ -221,11 +221,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 RefreshPayload(
                     gatewayStatus = api.status(),
                     cameras = api.cameras(),
-                    drives = api.drives(),
-                    recordingStatus = api.recordingStatus(),
-                    storageSummary = api.storageSummary(),
-                    youtubeAccounts = runCatching { api.youtubeAccounts() }.getOrDefault(emptyList()),
-                    youtubeStatus = runCatching { api.youtubeStatus() }.getOrNull()
+                    recordingStatus = api.recordingStatus()
                 )
             }.onSuccess { payload ->
                 if (_state.value.currentGatewayId != gatewayId) return@onSuccess
@@ -245,10 +241,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         gateways = collection.gateways,
                         config = collection.current ?: current.config,
                         cameras = cameras,
-                        drives = payload.drives,
-                        youtubeAccounts = payload.youtubeAccounts,
-                        youtubeStatus = payload.youtubeStatus,
-                        storageSummary = payload.storageSummary,
                         recordingStatus = payload.recordingStatus,
                         selectedCameraId = selected,
                         loading = false,
@@ -589,11 +581,7 @@ private fun startOfToday(): Long = Calendar.getInstance().apply {
 private data class RefreshPayload(
     val gatewayStatus: GatewayStatus,
     val cameras: List<CameraSummary>,
-    val drives: List<GoogleDriveAccount>,
-    val recordingStatus: RecordingStatus,
-    val storageSummary: StorageSummary,
-    val youtubeAccounts: List<YouTubeAccount>,
-    val youtubeStatus: YouTubeArchiveStatus?
+    val recordingStatus: RecordingStatus
 )
 
 internal fun ViewerUiState.activateGateway(
