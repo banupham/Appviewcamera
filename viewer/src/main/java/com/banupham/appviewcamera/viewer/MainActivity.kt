@@ -191,419 +191,88 @@ private fun PlaybackScreen(
         if (state.config.validate().isSuccess) onRefresh(cameraId)
     }
     val selectedClip = state.playbackItems.firstOrNull { it.id == state.selectedPlaybackItemId }
-    val uriHandler = LocalUriHandler.current
-    var playbackSource by remember { mutableStateOf("DRIVE") }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            val recording = state.recordingStatus
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Lưu trữ tự động", style = MaterialTheme.typography.titleMedium)
-                    Text(if (recording?.enabled == true) "Đang hoạt động" else "Đang khởi tạo")
-                    recording?.let {
-                        Text("Drive: ${it.driveSyncedAtMs?.let(::formatSyncTime) ?: "chưa có segment READY"}")
-                        Text("${it.uploadedClips} đoạn đã đồng bộ • ${it.pendingUploads} đang chờ • ${it.failedUploads} lỗi")
-                        it.lastUploadError?.let { error ->
-                            Text(error, color = MaterialTheme.colorScheme.error)
-                        }
-                        Text("Giữ clip cục bộ ${it.localRetentionMinutes} phút • còn ${formatBytes(it.diskFreeBytes)}")
-                    }
-                    recording?.let { Text("YouTube: đang gom ${it.youtubeBatchMinutes}/${it.youtubeTargetMinutes} phút") }
-                    Text("Segment Drive đầu tiên xuất hiện sau khoảng 60 giây.")
-                }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = playbackSource == "DRIVE",
-                    onClick = { playbackSource = "DRIVE" },
-                    label = { Text("Google Drive") }
-                )
-                FilterChip(
-                    selected = playbackSource == "YOUTUBE",
-                    onClick = { playbackSource = "YOUTUBE" },
-                    label = { Text("YouTube") }
-                )
-            }
-            Text(
-                if (playbackSource == "DRIVE")
-                    "Xem lại nhanh. Video được đồng bộ theo từng đoạn khoảng 1 phút."
-                else
-                    "Video được gom thành đoạn dài để giảm số lần tải lên. Nội dung mới thường cần hơn 1 giờ, cộng thêm thời gian tải lên và xử lý của YouTube, trước khi có thể xem."
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (selectedClip != null) {
+            PlaybackPlayer(
+                url = state.config.playbackStreamUrl(selectedClip.id),
+                apiToken = state.config.apiToken,
+                onPlaybackError = {}
             )
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(onClick = { onChangeDay(-1) }) { Text("Ngày trước") }
-                Text(formatRecordingDay(state.playbackDayStartMs), style = MaterialTheme.typography.titleMedium)
-                OutlinedButton(onClick = { onChangeDay(1) }) { Text("Ngày sau") }
+        } else {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (cameraId == null) "Chọn camera để xem lại" else "Chọn clip để phát",
+                    modifier = Modifier.padding(16.dp)
+                )
             }
+        }
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(state.cameras, key = { it.id }) { camera ->
+                FilterChip(
+                    selected = camera.id == cameraId,
+                    onClick = { onSelectCamera(camera.id) },
+                    label = { Text(camera.name) }
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(onClick = { onChangeDay(-1) }) { Text("Ngày trước") }
+            Text(formatRecordingDay(state.playbackDayStartMs), style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = { onChangeDay(1) }) { Text("Ngày sau") }
         }
         if (state.playbackDays.isNotEmpty()) {
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.playbackDays, key = { it.day }) { day ->
-                        FilterChip(
-                            selected = day.day == formatPlaybackApiDay(state.playbackDayStartMs),
-                            onClick = { onSelectDay(day.day) },
-                            label = { Text("${day.day} (${day.itemCount})") }
-                        )
-                    }
-                }
-            }
-        }
-        item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.cameras, key = { it.id }) { camera ->
+                items(state.playbackDays, key = { it.day }) { day ->
                     FilterChip(
-                        selected = camera.id == cameraId,
-                        onClick = { onSelectCamera(camera.id) },
-                        label = { Text(camera.name) }
+                        selected = day.day == formatPlaybackApiDay(state.playbackDayStartMs),
+                        onClick = { onSelectDay(day.day) },
+                        label = { Text("${day.day} (${day.itemCount})") }
                     )
                 }
             }
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { onRefresh(cameraId) }) { Text("Làm mới clip") }
-                Text("${state.playbackItems.size} clip")
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("${state.playbackItems.size} clip")
+            TextButton(onClick = { onRefresh(cameraId) }) { Text("Làm mới") }
         }
-        selectedClip?.let { clip ->
-            val effectiveSource = if (playbackSource == "YOUTUBE") {
-                if (clip.youtubeAvailable) "YOUTUBE_READY" else null
-            } else when {
-                clip.driveAvailable -> "DRIVE_READY"
-                clip.localAvailable -> "LOCAL_CACHE"
-                else -> null
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (state.playbackItems.isEmpty()) {
+                item { Text("Chưa có clip hoàn tất cho camera này.") }
             }
-            when (effectiveSource) {
-                "LOCAL_CACHE", "DRIVE_READY" -> item {
-                    PlaybackPlayer(
-                        url = state.config.playbackStreamUrl(
-                            clip.id,
-                            if (effectiveSource == "LOCAL_CACHE") "local" else "drive"
-                        ),
-                        apiToken = state.config.apiToken,
-                        onPlaybackError = {}
-                    )
-                }
-                "YOUTUBE_READY" -> item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Bản YouTube Private sẵn sàng")
-                            Text("Cần đăng nhập đúng tài khoản Google được cấp quyền.")
-                            Button(onClick = {
-                                val videoId = clip.youtubeVideoId ?: return@Button
-                                uriHandler.openUri(
-                                    "https://www.youtube.com/watch?v=$videoId&t=${clip.youtubeStartOffsetSeconds}s"
-                                )
-                            }) { Text("Mở YouTube đúng thời điểm") }
-                        }
-                    }
-                }
-                null -> item {
-                    Text(
-                        if (playbackSource == "YOUTUBE") "Bản YouTube chưa sẵn sàng. Google Drive có thể đã xem được."
-                        else "Bản Google Drive chưa sẵn sàng.",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-        if (state.playbackItems.isEmpty()) {
-            item { Text("Chưa có clip hoàn tất cho camera này.") }
-        }
-        items(state.playbackItems, key = { it.id }) { clip ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(formatRecordingTime(clip.startTime), style = MaterialTheme.typography.titleMedium)
-                    Text("${formatDuration(clip.duration)} • ${formatBytes(clip.sizeBytes)}")
-                    Text(playbackSourceText(clip))
-                    if (clip.motion) Text("Có chuyển động • tự động bảo vệ")
-                    clip.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (clip.playable) {
-                        OutlinedButton(onClick = { onSelectClip(clip.id) }) {
-                            Text(if (clip.preferredSource == "YOUTUBE_READY") "Xem bản YouTube" else "Phát clip")
-                        }
-                    } else {
-                        Text("Chưa có nguồn sẵn sàng", color = MaterialTheme.colorScheme.error)
-                    }
-                    TextButton(onClick = { onProtectClip(clip.id, !clip.protected) }) {
-                        Text(if (clip.protected) "Bỏ bảo vệ" else "Bảo vệ clip")
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun formatRecordingTime(value: Long): String =
-    SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(value))
-
-private fun formatSyncTime(value: Long): String =
-    "Đã đồng bộ tới " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(value))
-
-private fun formatRecordingDay(value: Long): String =
-    SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(value))
-
-private fun formatPlaybackApiDay(value: Long): String =
-    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(value))
-
-private fun playbackSourceText(clip: com.banupham.appviewcamera.viewer.api.PlaybackItem): String = when {
-    clip.localAvailable -> "Sẵn sàng từ cache Gateway"
-    clip.driveAvailable -> "Sẵn sàng từ Google Drive"
-    clip.youtubeAvailable -> "Sẵn sàng từ YouTube Private"
-    clip.status == "PROCESSING" -> "Đang xử lý nguồn lưu trữ"
-    else -> "Không có nguồn phát sẵn sàng"
-}
-
-private fun uploadStateText(uploadState: String, localState: String): String = when (uploadState) {
-    "UPLOADED" -> if (localState == "AVAILABLE") "Đã lưu Drive • còn bản trên máy" else "Đã lưu Drive • phát qua bộ nhớ đệm"
-    "UPLOADING" -> "Đang tải lên Google Drive"
-    "FAILED" -> "Tải Drive lỗi • Gateway sẽ tự thử lại"
-    else -> "Đang chờ tải lên Google Drive"
-}
-
-private fun formatDuration(value: Long?): String {
-    if (value == null) return "Chưa rõ thời lượng"
-    val seconds = value / 1000
-    return "%02d:%02d".format(seconds / 60, seconds % 60)
-}
-
-@Composable
-private fun StorageScreen(
-    state: ViewerUiState,
-    onAdd: (String, String) -> Unit,
-    onRefresh: (String) -> Unit,
-    onActivate: (String) -> Unit,
-    onDelete: (String) -> Unit,
-    onAddYouTube: (String, String, String, String, Int) -> Unit,
-    onReconnectYouTube: (String) -> Unit,
-    onDeleteYouTube: (String) -> Unit
-) {
-    var showAddDialog by remember { mutableStateOf(false) }
-    var showAddYouTubeDialog by remember { mutableStateOf(false) }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        state.storageSummary?.let { summary ->
-            item {
+            items(state.playbackItems, key = { it.id }) { clip ->
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("Tổng quan lưu trữ", style = MaterialTheme.typography.titleMedium)
-                        Text("Drive: ${summary.onlineDriveCount}/${summary.driveCount} online")
-                        Text("Tổng ${formatBytes(summary.totalBytes)} • còn ${formatBytes(summary.freeBytes)}")
-                        summary.averageBitrateBps?.let { Text("Bitrate ghi hình: ${formatBitrate(it)}") }
-                        summary.estimatedDailyBytes?.let { Text("Ước tính mỗi ngày: ${formatBytes(it)}") }
-                        Text(
-                            summary.estimatedRetentionSeconds?.let { "Có thể lưu khoảng ${formatRetention(it)}" }
-                                ?: "Đang thu thập dữ liệu để ước tính số ngày lưu"
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            Text(
-                "OAuth token được gửi một lần tới Gateway, lưu trong rclone.conf và không lưu trên Viewer.",
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-        item { Button(onClick = { showAddDialog = true }) { Text("Thêm Google Drive") } }
-        if (state.drives.isEmpty()) {
-            item { Text("Chưa có tài khoản Google Drive.") }
-        }
-        items(state.drives, key = { it.id }) { drive ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(drive.displayName, style = MaterialTheme.typography.titleMedium)
-                    Text("Remote: ${drive.id} • ${drive.status}${if (drive.active) " • đang dùng" else ""}")
-                    drive.quota?.let { quota ->
-                        Text("Đã dùng ${formatBytes(quota.used)} / ${formatBytes(quota.total)} • còn ${formatBytes(quota.free)}")
-                    }
-                    drive.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onRefresh(drive.id) }) { Text("Kiểm tra") }
-                        if (!drive.active) {
-                            OutlinedButton(onClick = { onActivate(drive.id) }) { Text("Sử dụng") }
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(formatRecordingTime(clip.startTime), style = MaterialTheme.typography.titleMedium)
+                        Text("${formatDuration(clip.duration)} • ${formatBytes(clip.sizeBytes)}")
+                        if (clip.motion) Text("Có chuyển động • tự động bảo vệ")
+                        clip.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        OutlinedButton(onClick = { onSelectClip(clip.id) }, enabled = clip.playable) {
+                            Text("Phát clip")
                         }
-                        TextButton(onClick = { onDelete(drive.id) }) { Text("Xóa") }
-                    }
-                }
-            }
-        }
-        item {
-            Text("YouTube Private", style = MaterialTheme.typography.titleLarge)
-        }
-        state.youtubeStatus?.let { youtube ->
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(if (youtube.enabled) "Lưu nền đang bật" else "Lưu nền chưa bật trên Gateway")
-                        Text("Batch ${youtube.targetDurationMinutes} phút • ước tính ${youtube.estimatedUploadsPerDay}/${youtube.maxTargetUploadsPerDay} video/ngày")
-                        youtube.warning?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        youtube.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    }
-                }
-            }
-        }
-        item {
-            Text("Google Drive vẫn là kho chính. YouTube chỉ nhận các batch đã DRIVE_READY; token chỉ lưu trên Gateway.")
-        }
-        item { Button(onClick = { showAddYouTubeDialog = true }) { Text("Thêm YouTube Private") } }
-        if (state.youtubeAccounts.isEmpty()) item { Text("Chưa có tài khoản YouTube.") }
-        items(state.youtubeAccounts, key = { "youtube-${it.id}" }) { account ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(account.displayName, style = MaterialTheme.typography.titleMedium)
-                    Text("${account.id} • ${account.status}")
-                    account.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onReconnectYouTube(account.id) }) { Text("Kết nối lại") }
-                        TextButton(onClick = { onDeleteYouTube(account.id) }) { Text("Xóa") }
+                        TextButton(onClick = { onProtectClip(clip.id, !clip.protected) }) {
+                            Text(if (clip.protected) "Bỏ bảo vệ" else "Bảo vệ clip")
+                        }
                     }
                 }
             }
         }
     }
-    if (showAddDialog) {
-        AddDriveDialog(
-            onDismiss = { showAddDialog = false },
-            onSave = {
-                onAdd(it.first, it.second)
-                showAddDialog = false
-            }
-        )
-    }
-    if (showAddYouTubeDialog) {
-        AddYouTubeDialog(
-            onDismiss = { showAddYouTubeDialog = false },
-            oauthConfigured = state.youtubeStatus?.oauthConfigured == true,
-            onSave = { id, name, clientId, clientSecret, targetMinutes ->
-                onAddYouTube(id, name, clientId, clientSecret, targetMinutes)
-                showAddYouTubeDialog = false
-            }
-        )
-    }
-}
-
-@Composable
-private fun AddYouTubeDialog(
-    oauthConfigured: Boolean,
-    onDismiss: () -> Unit,
-    onSave: (String, String, String, String, Int) -> Unit
-) {
-    var id by remember { mutableStateOf("youtube01") }
-    var displayName by remember { mutableStateOf("YouTube Private 01") }
-    var clientId by remember { mutableStateOf("") }
-    var clientSecret by remember { mutableStateOf("") }
-    var targetMinutes by remember { mutableStateOf(60) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Thêm YouTube Private") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Viewer mở trang Google với quyền tối thiểu để upload YouTube. Viewer không nhận hoặc lưu token.")
-                OutlinedTextField(
-                    id,
-                    { id = it.lowercase().filter { char -> char.isLetterOrDigit() || char == '_' || char == '-' } },
-                    modifier = Modifier.fillMaxWidth(), label = { Text("Mã tài khoản") }, singleLine = true
-                )
-                OutlinedTextField(
-                    displayName, { displayName = it }, modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Tên hiển thị") }, singleLine = true
-                )
-                if (!oauthConfigured) {
-                    Text("Nhập OAuth Desktop client một lần. Dữ liệu được gửi thẳng tới Gateway và không lưu trên Viewer.")
-                    OutlinedTextField(
-                        clientId, { clientId = it.trim() }, modifier = Modifier.fillMaxWidth(),
-                        label = { Text("OAuth client ID") }, singleLine = true
-                    )
-                    OutlinedTextField(
-                        clientSecret, { clientSecret = it.trim() }, modifier = Modifier.fillMaxWidth(),
-                        label = { Text("OAuth client secret") }, singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
-                    )
-                }
-                Text("Độ dài batch mong muốn")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(60, 90, 120).forEach { minutes ->
-                        FilterChip(
-                            selected = targetMinutes == minutes,
-                            onClick = { targetMinutes = minutes },
-                            label = { Text("$minutes") }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = id.isNotBlank() && displayName.isNotBlank() &&
-                    (oauthConfigured || (clientId.isNotBlank() && clientSecret.isNotBlank())),
-                onClick = { onSave(id.trim(), displayName.trim(), clientId, clientSecret, targetMinutes) }
-            ) { Text("Đăng nhập Google") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
-    )
-}
-
-private fun formatBitrate(value: Long): String =
-    if (value >= 1_000_000) "%.2f Mbps".format(value / 1_000_000.0) else "%.0f Kbps".format(value / 1_000.0)
-
-private fun formatRetention(seconds: Long): String {
-    val days = seconds / 86_400
-    val hours = seconds % 86_400 / 3_600
-    return if (days > 0) "$days ngày $hours giờ" else "$hours giờ"
-}
-
-@Composable
-private fun AddDriveDialog(onDismiss: () -> Unit, onSave: (Pair<String, String>) -> Unit) {
-    var id by remember { mutableStateOf("drive01") }
-    var displayName by remember { mutableStateOf("Google Drive 01") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Thêm Google Drive") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Viewer sẽ mở trang đăng nhập Google. Token được nhận và lưu trực tiếp tại Gateway, không hiển thị trong Viewer.")
-                OutlinedTextField(
-                    id,
-                    { id = it.lowercase().filter { char -> char.isLetterOrDigit() || char == '_' || char == '-' } },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Mã remote") },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    displayName,
-                    { displayName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Tên hiển thị") },
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = id.isNotBlank() && displayName.isNotBlank(),
-                onClick = { onSave(id.trim() to displayName.trim()) }
-            ) { Text("Đăng nhập Google") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
-    )
-}
-
-private fun formatBytes(value: Long?): String {
-    if (value == null) return "—"
-    val gib = value.toDouble() / (1024.0 * 1024.0 * 1024.0)
-    return if (gib >= 1.0) String.format("%.1f GB", gib) else String.format("%.1f MB", value / (1024.0 * 1024.0))
 }
 
 @Composable
