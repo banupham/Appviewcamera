@@ -1,6 +1,7 @@
 package com.banupham.appviewcamera.gateway
 
 import android.app.Application
+import androidx.media3.common.util.UnstableApi
 import com.banupham.appviewcamera.gateway.database.GatewayDatabase
 import com.banupham.appviewcamera.gateway.camera.CameraRepository
 import com.banupham.appviewcamera.gateway.rtsp.Media3RtspCameraProbe
@@ -14,6 +15,7 @@ class GatewayApplication : Application() {
     val container: GatewayContainer by lazy { GatewayContainer(this) }
 }
 
+@OptIn(UnstableApi::class)
 class GatewayContainer(application: Application) {
     private val database = GatewayDatabase.create(application)
     private val credentialCipher = AndroidKeystoreCredentialCipher()
