@@ -37,7 +37,10 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Run unit tests
-        run: ./gradlew test --stacktrace
+        run: ./gradlew :gateway:test :viewer:test --stacktrace
+
+      - name: Run Android lint
+        run: ./gradlew :gateway:lint :viewer:lint --stacktrace
 
       - name: Build Gateway and Viewer
         run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
@@ -45,14 +48,14 @@ jobs:
       - name: Upload Gateway APK
         uses: actions/upload-artifact@v7
         with:
-          name: gateway-debug.apk
+          name: AppView-Android-Gateway
           path: gateway/build/outputs/apk/debug/gateway-debug.apk
           if-no-files-found: error
 
       - name: Upload Viewer APK
         uses: actions/upload-artifact@v7
         with:
-          name: viewer-debug.apk
+          name: AppView-Viewer
           path: viewer/build/outputs/apk/debug/viewer-debug.apk
           if-no-files-found: error
 
