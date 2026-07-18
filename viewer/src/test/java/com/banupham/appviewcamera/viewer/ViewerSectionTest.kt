@@ -5,9 +5,9 @@ import org.junit.Test
 
 class ViewerSectionTest {
     @Test
-    fun containsTheFiveRequiredTopLevelSectionsInOrder() {
+    fun containsAndroidGatewaySectionsInOrder() {
         assertEquals(
-            listOf("Trực tiếp", "Xem lại", "Thiết bị", "Lưu trữ", "Cài đặt"),
+            listOf("Trực tiếp", "Xem lại", "Thiết bị", "Cài đặt"),
             ViewerSection.entries.map { it.label }
         )
     }
