@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -250,7 +249,6 @@ private fun PlaybackScreen(
             TextButton(onClick = { onRefresh(cameraId) }) { Text("Làm mới") }
         }
         LazyColumn(
-            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (state.playbackItems.isEmpty()) {
@@ -274,6 +272,28 @@ private fun PlaybackScreen(
             }
         }
     }
+}
+
+private fun formatRecordingTime(value: Long): String =
+    SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(value))
+
+private fun formatRecordingDay(value: Long): String =
+    SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(value))
+
+private fun formatPlaybackApiDay(value: Long): String =
+    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(value))
+
+private fun formatDuration(value: Long?): String {
+    if (value == null) return "Chưa rõ thời lượng"
+    val seconds = value / 1000
+    return "%02d:%02d".format(seconds / 60, seconds % 60)
+}
+
+private fun formatBytes(value: Long): String = when {
+    value >= 1024L * 1024 * 1024 -> "%.1f GB".format(value / (1024.0 * 1024 * 1024))
+    value >= 1024L * 1024 -> "%.1f MB".format(value / (1024.0 * 1024))
+    value >= 1024 -> "%.1f KB".format(value / 1024.0)
+    else -> "$value B"
 }
 
 @Composable
