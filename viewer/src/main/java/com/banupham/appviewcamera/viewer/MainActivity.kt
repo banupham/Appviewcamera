@@ -157,16 +157,6 @@ private fun ViewerScreen(
                     onSave = viewModel::saveCamera,
                     onDelete = viewModel::deleteCamera
                 )
-                ViewerSection.STORAGE -> StorageScreen(
-                    state = state,
-                    onAdd = viewModel::authorizeDrive,
-                    onRefresh = viewModel::refreshDrive,
-                    onActivate = viewModel::activateDrive,
-                    onDelete = viewModel::deleteDrive,
-                    onAddYouTube = viewModel::authorizeYouTube,
-                    onReconnectYouTube = viewModel::reconnectYouTube,
-                    onDeleteYouTube = viewModel::deleteYouTubeAccount
-                )
                 ViewerSection.SETTINGS -> SettingsScreen(
                     state,
                     viewModel::saveConfig,
