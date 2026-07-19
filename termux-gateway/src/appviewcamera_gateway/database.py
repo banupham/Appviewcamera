@@ -565,27 +565,13 @@ class GatewayDatabase:
         return [dict(row) for row in rows]
 
     def local_cache_clips(self, limit: int = 100) -> list[dict]:
-        """
-        Trả về các clip cục bộ được phép xóa khi Gateway thiếu dung lượng.
-
-        Chỉ xóa khi:
-        - File đã upload và được xác minh trên Google Drive.
-        - Kích thước file Drive khớp với file cục bộ.
-        - Video YouTube đã upload và xử lý thành công.
-        """
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM recording_clips "
-                "WHERE local_state='AVAILABLE' "
-                "AND clip_state='LOCAL_CACHE' "
-                "AND remote_verified_at_ms IS NOT NULL "
-                "AND remote_size_bytes=size_bytes "
-                "AND youtube_status='YOUTUBE_READY' "
-                "ORDER BY uploaded_at_ms, started_at_ms "
-                "LIMIT ?",
+                "SELECT * FROM recording_clips WHERE local_state='AVAILABLE' "
+                "AND clip_state='LOCAL_CACHE' AND remote_verified_at_ms IS NOT NULL "
+                "AND remote_size_bytes=size_bytes ORDER BY uploaded_at_ms, started_at_ms LIMIT ?",
                 (max(1, min(500, limit)),),
             ).fetchall()
-
         return [dict(row) for row in rows]
 
     def mark_local_missing(self, clip_id: str) -> None:
@@ -671,31 +657,15 @@ class GatewayDatabase:
     def remote_cleanup_candidates(
         self, remote_id: str, before_ms: int, limit: int = 20
     ) -> list[dict]:
-        """
-        Trả về các clip trên Google Drive được phép xóa khi Drive gần đầy.
-
-        Chỉ xóa khi:
-        - File Drive đã được xác minh.
-        - Kích thước file Drive khớp với clip gốc.
-        - Bản YouTube đã upload và xử lý thành công.
-        - Clip không được người dùng bảo vệ.
-        - Clip đã cũ hơn thời gian lưu tối thiểu.
-        """
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM recording_clips "
-                "WHERE remote_id=? "
+                "SELECT * FROM recording_clips WHERE remote_id=? "
                 "AND clip_state IN ('DRIVE_READY', 'LOCAL_CACHE') "
-                "AND remote_verified_at_ms IS NOT NULL "
-                "AND remote_size_bytes=size_bytes "
-                "AND youtube_status='YOUTUBE_READY' "
-                "AND protected=0 "
-                "AND started_at_ms<=? "
-                "ORDER BY started_at_ms "
-                "LIMIT ?",
+                "AND remote_verified_at_ms IS NOT NULL AND remote_size_bytes=size_bytes "
+                "AND protected=0 AND started_at_ms<=? "
+                "ORDER BY started_at_ms LIMIT ?",
                 (remote_id, before_ms, max(1, min(100, limit))),
             ).fetchall()
-
         return [dict(row) for row in rows]
 
     def record_deleted_clip(self, clip: dict, reason: str, deleted_at_ms: int) -> None:
