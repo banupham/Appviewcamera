@@ -48,6 +48,30 @@ interface RecordingClipDao {
     @Query("SELECT COUNT(*) FROM recording_clips WHERE uploadState = :state AND clipState != 'RECORDING'")
     suspend fun uploadCount(state: String): Int
 
+    @Query(
+        """
+        UPDATE recording_clips SET uploadState = 'UPLOADED', clipState = 'LOCAL_CACHE',
+            remoteId = :remoteId, remotePath = :remotePath, remoteFileId = :remoteFileId,
+            remoteSizeBytes = :remoteSizeBytes, remoteVerifiedAtMs = :verifiedAtMs,
+            uploadedAtMs = :verifiedAtMs, lastError = NULL, stateUpdatedAtMs = :verifiedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun markDriveUploaded(
+        id: String,
+        remoteId: String,
+        remotePath: String,
+        remoteFileId: String,
+        remoteSizeBytes: Long,
+        verifiedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE recording_clips SET uploadState = 'FAILED', clipState = 'UPLOAD_RETRY', lastError = :error, " +
+            "uploadAttempts = uploadAttempts + 1, nextRetryMs = :nextRetryMs, stateUpdatedAtMs = :nowMs WHERE id = :id"
+    )
+    suspend fun markDriveFailed(id: String, error: String, nextRetryMs: Long, nowMs: Long): Int
+
     @Upsert
     suspend fun upsert(clip: RecordingClipEntity)
 
