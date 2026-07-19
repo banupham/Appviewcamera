@@ -8,12 +8,12 @@ data class RtspCredentials(val username: String, val password: String)
 
 object RtspUrlFactory {
     fun isValid(url: String): Boolean = runCatching {
-        val uri = URI(url.trim())
+        val uri = parseRtspUri(url.trim())
         uri.scheme.equals("rtsp", ignoreCase = true) && !uri.host.isNullOrBlank()
     }.getOrDefault(false)
 
     fun withoutCredentials(url: String): String {
-        val uri = URI(url)
+        val uri = parseRtspUri(url.trim())
         return buildUrl(uri, null)
     }
 
