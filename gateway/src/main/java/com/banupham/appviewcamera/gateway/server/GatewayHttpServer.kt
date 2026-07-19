@@ -8,6 +8,7 @@ import com.banupham.appviewcamera.gateway.recording.PlaybackIndex
 import com.banupham.appviewcamera.gateway.recording.RecordingRepository
 import com.banupham.appviewcamera.gateway.recording.RecordingSettingsStore
 import com.banupham.appviewcamera.gateway.storage.CloudCredentialStore
+import com.banupham.appviewcamera.gateway.storage.GoogleDriveUploadWorker
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
@@ -33,6 +34,7 @@ class GatewayHttpServer(
     private val recordings: RecordingRepository,
     private val recordingSettings: RecordingSettingsStore,
     private val cloudCredentials: CloudCredentialStore,
+    private val driveUploader: GoogleDriveUploadWorker,
     private val onRecordingSettingsChanged: suspend () -> Unit
 ) : Closeable {
     private val playback = PlaybackIndex(recordings)
@@ -290,11 +292,10 @@ class GatewayHttpServer(
                     ?: return HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy playback item"))
                 val source = queryParameters(uri)["source"]?.lowercase() ?: "auto"
                 require(source in setOf("auto", "local", "drive")) { "source phải là auto, local hoặc drive" }
-                if (source == "drive") return HttpResponse.json(409, JSONObject()
-                    .put("detail", "Bản Drive chưa được tải vào playback cache")
-                    .put("sources_url", "/api/playback/items/$id/sources"))
-                val file = recordings.localFile(clip)
-                    ?: return HttpResponse.json(409, JSONObject().put("detail", "Nguồn local chưa sẵn sàng"))
+                val file = when (source) {
+                    "drive" -> driveUploader.restoreForPlayback(id)
+                    else -> recordings.localFile(clip)
+                } ?: return HttpResponse.json(409, JSONObject().put("detail", "Nguồn playback chưa sẵn sàng"))
                 HttpResponse.file(file, request.headers["range"], request.method == "HEAD")
             }
             else -> playback.item(decode(suffix))?.let { HttpResponse.json(200, it) }
