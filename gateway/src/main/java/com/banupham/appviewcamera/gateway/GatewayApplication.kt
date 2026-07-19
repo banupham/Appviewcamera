@@ -15,6 +15,7 @@ import com.banupham.appviewcamera.gateway.storage.GoogleDriveUploadWorker
 import com.banupham.appviewcamera.gateway.server.GatewaySettingsStore
 import com.banupham.appviewcamera.gateway.youtube.YouTubeCredentialStore
 import com.banupham.appviewcamera.gateway.youtube.YouTubeOAuthManager
+import com.banupham.appviewcamera.gateway.youtube.YouTubePrivateUploadWorker
 
 class GatewayApplication : Application() {
     val container: GatewayContainer by lazy { GatewayContainer(this) }
@@ -35,5 +36,8 @@ class GatewayContainer(application: Application) {
     val driveUploader = GoogleDriveUploadWorker(cloudCredentials, recordingRepository, driveOAuth)
     val youtubeCredentials = YouTubeCredentialStore(application, credentialCipher)
     val youtubeOAuth = YouTubeOAuthManager(youtubeCredentials)
+    val youtubeUploader = YouTubePrivateUploadWorker(
+        youtubeCredentials, youtubeOAuth, recordingRepository, driveUploader
+    )
     val gatewayRuntimeState = GatewayRuntimeState()
 }
