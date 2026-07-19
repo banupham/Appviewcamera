@@ -201,6 +201,7 @@ private fun PlaybackScreen(
         if (state.config.validate().isSuccess) onRefresh(cameraId)
     }
     val selectedClip = state.playbackItems.firstOrNull { it.id == state.selectedPlaybackItemId }
+    val uriHandler = LocalUriHandler.current
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -212,6 +213,15 @@ private fun PlaybackScreen(
                 apiToken = state.config.apiToken,
                 onPlaybackError = {}
             )
+            selectedClip.youtubeVideoId?.takeIf { it.isNotBlank() }?.let { videoId ->
+                OutlinedButton(
+                    onClick = {
+                        uriHandler.openUri(
+                            "https://www.youtube.com/watch?v=$videoId&t=${selectedClip.youtubeStartOffsetSeconds}s"
+                        )
+                    }
+                ) { Text("Mở bản YouTube Private") }
+            }
         } else {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(
