@@ -54,6 +54,14 @@ jobs:
             gateway/build/outputs/apk/debug/gateway-debug.apk \
             viewer/build/outputs/apk/debug/viewer-debug.apk; do
             signed_apk="${apk%.apk}-signed.apk"
+            jarsigner \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -keypass android \
+              -sigalg SHA256withRSA \
+              -digestalg SHA-256 \
+              "$apk" \
+              androiddebugkey
             "$apksigner" sign \
               --ks "$HOME/.android/debug.keystore" \
               --ks-key-alias androiddebugkey \
