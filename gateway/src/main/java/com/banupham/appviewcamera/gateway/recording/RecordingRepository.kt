@@ -106,6 +106,26 @@ class RecordingRepository(
 
     suspend fun recentForDays(cameraId: String): List<RecordingClipEntity> = dao.recentForDays(cameraId, 20_000)
 
+    suspend fun uploadCandidates(limit: Int = 4): List<RecordingClipEntity> =
+        dao.uploadCandidates(nowMs(), limit)
+
+    suspend fun markDriveUploaded(
+        clip: RecordingClipEntity,
+        remoteId: String,
+        remotePath: String,
+        remoteFileId: String,
+        remoteSizeBytes: Long,
+        verifiedAtMs: Long = nowMs()
+    ) {
+        dao.markDriveUploaded(clip.id, remoteId, remotePath, remoteFileId, remoteSizeBytes, verifiedAtMs)
+    }
+
+    suspend fun markDriveFailed(clip: RecordingClipEntity, message: String) {
+        val attempts = clip.uploadAttempts + 1
+        val delayMs = (60_000L * (1L shl (attempts - 1).coerceAtMost(6))).coerceAtMost(3_600_000L)
+        dao.markDriveFailed(clip.id, message.take(500), nowMs() + delayMs, nowMs())
+    }
+
     suspend fun get(id: String): RecordingClipEntity? = dao.get(id)
 
     suspend fun setProtected(id: String, protected: Boolean): RecordingClipEntity? {
