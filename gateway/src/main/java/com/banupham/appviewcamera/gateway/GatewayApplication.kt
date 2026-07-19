@@ -9,6 +9,7 @@ import com.banupham.appviewcamera.gateway.recording.RecordingRepository
 import com.banupham.appviewcamera.gateway.recording.RecordingSettingsStore
 import com.banupham.appviewcamera.gateway.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.gateway.server.GatewayRuntimeState
+import com.banupham.appviewcamera.gateway.storage.CloudCredentialStore
 import com.banupham.appviewcamera.gateway.server.GatewaySettingsStore
 
 class GatewayApplication : Application() {
@@ -25,5 +26,6 @@ class GatewayContainer(application: Application) {
     @UnstableApi
     val cameraProbe = Media3RtspCameraProbe(application, credentialCipher)
     val gatewaySettings = GatewaySettingsStore(application)
+    val cloudCredentials = CloudCredentialStore(application, credentialCipher)
     val gatewayRuntimeState = GatewayRuntimeState()
 }
