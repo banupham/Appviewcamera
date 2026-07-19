@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.banupham.appviewcamera.viewer"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 35
         versionCode = 13
         versionName = "1.4.0"
