@@ -45,6 +45,28 @@ jobs:
       - name: Build Gateway and Viewer
         run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
 
+      - name: Sign APKs with v1 and v2 for Android 10 OEM compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          for apk in \
+            gateway/build/outputs/apk/debug/gateway-debug.apk \
+            viewer/build/outputs/apk/debug/viewer-debug.apk; do
+            signed_apk="${apk%.apk}-signed.apk"
+            "$apksigner" sign \
+              --ks "$HOME/.android/debug.keystore" \
+              --ks-key-alias androiddebugkey \
+              --ks-pass pass:android \
+              --key-pass pass:android \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled false \
+              --out "$signed_apk" \
+              "$apk"
+            mv "$signed_apk" "$apk"
+          done
+
       - name: Verify Android 10 compatibility and APK signatures
         shell: bash
         run: |
