@@ -10,6 +10,7 @@ import com.banupham.appviewcamera.gateway.recording.RecordingSettingsStore
 import com.banupham.appviewcamera.gateway.security.AndroidKeystoreCredentialCipher
 import com.banupham.appviewcamera.gateway.server.GatewayRuntimeState
 import com.banupham.appviewcamera.gateway.storage.CloudCredentialStore
+import com.banupham.appviewcamera.gateway.storage.GoogleDriveOAuthManager
 import com.banupham.appviewcamera.gateway.storage.GoogleDriveUploadWorker
 import com.banupham.appviewcamera.gateway.server.GatewaySettingsStore
 
@@ -28,6 +29,7 @@ class GatewayContainer(application: Application) {
     val cameraProbe = Media3RtspCameraProbe(application, credentialCipher)
     val gatewaySettings = GatewaySettingsStore(application)
     val cloudCredentials = CloudCredentialStore(application, credentialCipher)
-    val driveUploader = GoogleDriveUploadWorker(cloudCredentials, recordingRepository)
+    val driveOAuth = GoogleDriveOAuthManager(cloudCredentials)
+    val driveUploader = GoogleDriveUploadWorker(cloudCredentials, recordingRepository, driveOAuth)
     val gatewayRuntimeState = GatewayRuntimeState()
 }
