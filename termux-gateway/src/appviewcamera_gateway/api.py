@@ -261,41 +261,6 @@ class GatewayRouter:
                 )
             if path.startswith("/api/playback/items/") and method in ("GET", "HEAD"):
                 suffix = path.removeprefix("/api/playback/items/")
-                if suffix.endswith("/thumbnail"):
-                    item_id = unquote(
-                        suffix.removesuffix(
-                            "/thumbnail"
-                        )
-                    )
-
-                    item = self.runtime.playback.item(
-                        item_id
-                    )
-
-                    if item is None:
-                        return 404, {
-                            "detail":
-                                "Playback item not found"
-                        }
-
-                    thumbnail_path = (
-                        self.runtime.recording
-                        .playback_thumbnail_path(
-                            item_id,
-                            self.runtime.drive_store,
-                        )
-                    )
-
-                    if thumbnail_path is None:
-                        return 404, {
-                            "detail":
-                                "Playback thumbnail not found"
-                        }
-
-                    return 200, FilePayload(
-                        thumbnail_path,
-                        "image/jpeg",
-                    )
                 if suffix.endswith("/stream"):
                     item_id = unquote(suffix.removesuffix("/stream"))
                     item = self.runtime.playback.item(item_id)
