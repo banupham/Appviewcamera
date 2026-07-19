@@ -7,7 +7,7 @@ class ViewerSectionTest {
     @Test
     fun containsAndroidGatewaySectionsInOrder() {
         assertEquals(
-            listOf("Trực tiếp", "Xem lại", "Thiết bị", "Cài đặt"),
+            listOf("Trực tiếp", "Xem lại", "Thiết bị", "Lưu trữ", "Cài đặt"),
             ViewerSection.entries.map { it.label }
         )
     }
