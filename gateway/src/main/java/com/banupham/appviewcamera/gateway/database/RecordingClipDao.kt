@@ -42,6 +42,13 @@ interface RecordingClipDao {
     @Query("SELECT * FROM recording_clips WHERE localState = 'AVAILABLE' ORDER BY startedAtMs ASC")
     suspend fun localClipsOldestFirst(): List<RecordingClipEntity>
 
+    @Query(
+        "SELECT * FROM recording_clips WHERE localState = 'AVAILABLE' AND " +
+            "(uploadState = 'PENDING' OR (uploadState = 'FAILED' AND nextRetryMs <= :nowMs)) " +
+            "AND clipState != 'RECORDING' ORDER BY startedAtMs ASC LIMIT :limit"
+    )
+    suspend fun uploadCandidates(nowMs: Long, limit: Int): List<RecordingClipEntity>
+
     @Query("SELECT COUNT(*) FROM recording_clips WHERE clipState != 'RECORDING'")
     suspend fun clipCount(): Int
 
