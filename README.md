@@ -1,85 +1,45 @@
 # AppViewCamera
 
-Phiên bản hiện tại: Viewer 1.4.0 / Termux Gateway 1.5.0 / Android Gateway 0.4.1.
+Dự án chỉ gồm ba sản phẩm:
 
-Hệ thống camera không mở NAT và không port forwarding. Điện thoại đặt cùng camera có thể chạy
-**Termux Gateway** hoặc **Android Gateway APK**. Đây là hai Gateway độc lập, thay thế cho nhau và
-dùng cùng hợp đồng API; không Gateway nào cần Gateway còn lại. Điện thoại người dùng chạy **Viewer APK**. Hai thiết bị kết nối qua LAN hoặc
-Tailscale như một mạng IP riêng.
+1. **Termux Gateway** — Gateway Python chạy trong Termux.
+2. **AppView Android Gateway** — Gateway độc lập dạng APK.
+3. **AppView Viewer** — ứng dụng xem camera và quản lý Gateway.
 
-```text
-Camera IP --RTSP/LAN--> Termux Gateway --RTSP/API/Tailscale--> Viewer APK
-                              |
-                              +-- SQLite / recordings / rclone / Google Drive
-```
+Hai ứng dụng Android yêu cầu **Android 10 (API 29) trở lên**.
 
-## Trạng thái
+## Cấu trúc
 
-- Giai đoạn 1: project Android và hai APK tối thiểu — hoàn thành.
-- Giai đoạn 2: quản lý camera và kiểm tra RTSP trong Gateway APK thử nghiệm — hoàn thành.
-- Giai đoạn 3: Termux Gateway, tự quét LAN và relay MediaMTX — hoàn thành trên thiết bị ARM64.
-- Giai đoạn 4: Viewer quản trị camera và xem RTSP relay qua LAN/Tailscale — hoàn thành, đã thử H.264 1080p30.
-- Giai đoạn lưu trữ: upload queue bền vững, nhiều Drive, quota thật, tự chuyển Drive và retention 90% → 80% — đã triển khai.
-- Giai đoạn ghi/xem lại: fMP4, SQLite, chọn ngày, phát local/Drive, bảo vệ clip và motion ISAPI — đã triển khai.
+- `termux-gateway/`: mã nguồn, cấu hình mẫu, script cài đặt và test Termux Gateway.
+- `gateway/`: mã nguồn AppView Android Gateway.
+- `viewer/`: mã nguồn AppView Viewer.
+- `.github/workflows/`: build/test cloud cho Termux và hai APK Android.
+- Các file Gradle ở thư mục gốc là hạ tầng build bắt buộc cho hai ứng dụng Android.
 
-Android Gateway APK là server trung gian độc lập: foreground service, API có Bearer token, QR
-pairing, camera CRUD, quét LAN và MediaMTX ARM64 nhúng trong APK cho shared ingest/recording.
+## AppView Android Gateway
 
-## Android Gateway
+- HTTP API Bearer tại cổng 8080 và RTSP relay MediaMTX tại cổng 8554.
+- Camera CRUD, quét LAN, kiểm tra RTSP, QR pairing và tự chạy sau reboot.
+- Mật khẩu camera, Drive và YouTube token được mã hóa bằng Android Keystore.
+- Recording fMP4, Room/SQLite index, retention an toàn và HTTP Range playback.
+- Google Drive upload/restore và YouTube Private upload chạy nền.
+- APK chứa MediaMTX ARM64 cho thiết bị thật và x86_64 cho cloud emulator.
 
-Android Gateway là lựa chọn APK độc lập, không cần cài môi trường Termux:
+## AppView Viewer
 
-- API tương thích Viewer tại `:8080`, RTSP proxy tại `:8554`.
-- Mật khẩu camera mã hóa trong Android Keystore và không trả về API.
-- QR/URI pairing chứa gateway ID, địa chỉ LAN, hai cổng và token ngẫu nhiên 256-bit.
-- Foreground service giữ CPU/Wi-Fi hoạt động; có tùy chọn tự chạy sau reboot.
-- Camera CRUD và quét nhanh các cổng camera phổ biến trong subnet `/24` hiện tại.
-- MediaMTX chuyển tiếp không transcode, dùng chung một main ingest cho live và recording.
-- Viewer dùng substream on-demand trong lưới và main stream khi phóng to; tự giới hạn 4/8/16 theo decoder/RAM.
-- Room/SQLite lập chỉ mục fMP4, tự phục hồi index sau reboot và cung cấp playback local có HTTP Range.
-- Cache local giới hạn mục tiêu 1% dung lượng; chỉ xóa clip sau khi đã xác minh có bản Drive/YouTube và tự dừng ghi khi thiếu chỗ.
+- Ghép nối và quản lý nhiều Gateway.
+- Live grid dùng substream; xem chi tiết dùng main stream.
+- Playback theo camera/ngày, bảo vệ clip và khôi phục clip từ Drive.
+- Quản lý Google Drive và YouTube Private trong mục Lưu trữ.
+- Token Gateway được lưu bằng Android Keystore.
 
-Chi tiết cài đặt, API và giới hạn: [docs/android-gateway.md](docs/android-gateway.md).
+## Termux Gateway
 
-## Termux Gateway MVP
+Xem hướng dẫn cài đặt tại [termux-gateway/README.md](termux-gateway/README.md).
 
-Mã nguồn nằm tại `termux-gateway/` và hiện cung cấp:
+## Build và kiểm tra
 
-- API Python tiêu chuẩn có Bearer token, không cần pip/Rust trên Termux.
-- Camera CRUD; mật khẩu tách khỏi `cameras.json`.
-- ONVIF WS-Discovery và quét các cổng LAN có giới hạn.
-- SQLite lưu camera tìm thấy, không quét lại toàn mạng để đọc danh sách.
-- Tự sinh cấu hình MediaMTX và relay RTSP không transcoding.
-- Quản lý nhiều Google Drive, upload/retry/xác minh bằng rclone và không trả OAuth token về Viewer.
-- Đăng nhập Google trực tiếp từ Viewer; Gateway tự chạy phiên OAuth và lưu token, không cần mở Termux.
-- Ghi segment fMP4 không transcoding, lập chỉ mục SQLite và phục vụ playback có Bearer token/HTTP Range.
-- Giám sát MediaMTX, retry 5, 10, 30 rồi 60 giây.
-- Script cài đặt, start/stop/status/doctor và Termux:Boot.
-- Tự phát hiện sự kiện chuyển động Hikvision ISAPI, bảo vệ clip liên quan và không giải mã video liên tục.
-- Ước tính bitrate, dung lượng mỗi ngày và thời gian lưu còn lại từ dữ liệu thật.
-- Log rotation, Termux:Boot, watchdog MediaMTX và phục hồi upload sau khi mất mạng/reboot.
-- Viewer hiển thị trạng thái Gateway ngoại tuyến và cho phép thử lại, không thoát ứng dụng.
+- `Android build`: unit test, lint, build hai APK, kiểm tra signer/minSdk và cài/cài đè trên Android 10 emulator.
+- `Termux Gateway`: pytest, shellcheck và tạo gói Termux Gateway.
 
-Hướng dẫn cài và thử trên điện thoại: [termux-gateway/README.md](termux-gateway/README.md).
-
-## Build trên GitHub
-
-Hai workflow độc lập:
-
-- `Android build`: test Kotlin và tạo Android Gateway `gateway-debug.apk`, Viewer `viewer-debug.apk`.
-- `Termux Gateway`: test Python/shell và tạo `termux-gateway.zip`.
-
-Máy hiện tại không cần Android Studio hoặc Android SDK. Kết quả chính thức được xác nhận bằng
-GitHub Actions.
-
-## Tài liệu
-
-- [Giai đoạn 1](docs/phase-1.md)
-- [Giai đoạn 2](docs/phase-2.md)
-- [Giai đoạn 3](docs/phase-3-termux.md)
-- [Giai đoạn 4](docs/phase-4-viewer-live.md)
-- [Lưu trữ Google Drive](docs/phase-9-google-drive.md)
-- [Ghi hình và xem lại](docs/phase-6-14-recording-playback.md)
-- [Database schema](docs/database-schema.md)
-- [YouTube Private archive](docs/phase-youtube-private.md)
-- [Roadmap](docs/roadmap.md)
+APK cloud dùng khóa debug ổn định để các bản kế tiếp có thể cài đè cùng chữ ký.
