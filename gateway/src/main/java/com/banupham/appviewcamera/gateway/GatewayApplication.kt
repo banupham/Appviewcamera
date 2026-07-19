@@ -15,7 +15,6 @@ class GatewayApplication : Application() {
     val container: GatewayContainer by lazy { GatewayContainer(this) }
 }
 
-@OptIn(UnstableApi::class)
 class GatewayContainer(application: Application) {
     private val database = GatewayDatabase.create(application)
     private val credentialCipher = AndroidKeystoreCredentialCipher()
@@ -23,6 +22,7 @@ class GatewayContainer(application: Application) {
     val cameraRepository = CameraRepository(database.cameraDao(), credentialCipher)
     val recordingRepository = RecordingRepository(application, database.recordingClipDao())
     val recordingSettings = RecordingSettingsStore(application)
+    @UnstableApi
     val cameraProbe = Media3RtspCameraProbe(application, credentialCipher)
     val gatewaySettings = GatewaySettingsStore(application)
     val gatewayRuntimeState = GatewayRuntimeState()
