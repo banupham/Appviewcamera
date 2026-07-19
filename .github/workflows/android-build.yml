@@ -49,28 +49,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          aapt="$build_tools/aapt"
-          apksigner="$build_tools/apksigner"
+          aapt="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          echo "aapt=$aapt"
+          echo "apksigner=$apksigner"
           test -x "$aapt"
           test -x "$apksigner"
 
+          declare -a signers=()
           for apk in \
             gateway/build/outputs/apk/debug/gateway-debug.apk \
             viewer/build/outputs/apk/debug/viewer-debug.apk; do
             badging="$("$aapt" dump badging "$apk")"
-            echo "$badging" | grep -E "^package:|^sdkVersion:|^native-code:"
+            echo "$badging" | grep -E "^package:|^sdkVersion:" || true
             min_sdk="$(echo "$badging" | sed -n "s/^sdkVersion:'\([0-9][0-9]*\)'.*/\1/p")"
+            echo "$apk minSdk=$min_sdk"
             test -n "$min_sdk"
             test "$min_sdk" -le 29
-            "$apksigner" verify --verbose --print-certs "$apk"
+            "$apksigner" verify --verbose "$apk"
+            signer="$("$apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ { print $2; exit }')"
+            echo "$apk signer=$signer"
+            test -n "$signer"
+            signers+=("$signer")
           done
 
-          gateway_signer="$("$apksigner" verify --print-certs gateway/build/outputs/apk/debug/gateway-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-          viewer_signer="$("$apksigner" verify --print-certs viewer/build/outputs/apk/debug/viewer-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-          test -n "$gateway_signer"
-          test "$gateway_signer" = "$viewer_signer"
-          echo "Stable APK signer SHA-256: $gateway_signer"
+          test "${signers[0]}" = "${signers[1]}"
+          echo "Stable APK signer SHA-256: ${signers[0]}"
 
       - name: Save APKs for Android 10 install test
         uses: actions/upload-artifact@v7
