@@ -157,6 +157,13 @@ private fun ViewerScreen(
                     onSave = viewModel::saveCamera,
                     onDelete = viewModel::deleteCamera
                 )
+                ViewerSection.STORAGE -> StorageScreen(
+                    state = state,
+                    onAdd = viewModel::authorizeDrive,
+                    onRefresh = viewModel::refreshDrive,
+                    onActivate = viewModel::activateDrive,
+                    onDelete = viewModel::deleteDrive
+                )
                 ViewerSection.SETTINGS -> SettingsScreen(
                     state,
                     viewModel::saveConfig,
@@ -294,6 +301,112 @@ private fun formatBytes(value: Long): String = when {
     value >= 1024L * 1024 -> "%.1f MB".format(value / (1024.0 * 1024))
     value >= 1024 -> "%.1f KB".format(value / 1024.0)
     else -> "$value B"
+}
+
+@Composable
+private fun StorageScreen(
+    state: ViewerUiState,
+    onAdd: (String, String, String, String) -> Unit,
+    onRefresh: (String) -> Unit,
+    onActivate: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        state.storageSummary?.let { summary ->
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("Tổng quan lưu trữ", style = MaterialTheme.typography.titleMedium)
+                        Text("Drive: ${summary.onlineDriveCount}/${summary.driveCount} online")
+                        Text("Đã dùng ${formatBytes(summary.usedBytes)} • còn ${formatBytes(summary.freeBytes)}")
+                    }
+                }
+            }
+        }
+        item {
+            Text("Client secret và token chỉ được gửi tới Gateway và lưu mã hóa bằng Android Keystore.")
+        }
+        item { Button(onClick = { showAddDialog = true }) { Text("Thêm Google Drive") } }
+        if (state.drives.isEmpty()) item { Text("Chưa có tài khoản Google Drive.") }
+        items(state.drives, key = { it.id }) { drive ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(drive.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text("${drive.id} • ${drive.status}${if (drive.active) " • đang dùng" else ""}")
+                    drive.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onRefresh(drive.id) }) { Text("Kiểm tra") }
+                        if (!drive.active) OutlinedButton(onClick = { onActivate(drive.id) }) { Text("Sử dụng") }
+                        TextButton(onClick = { onDelete(drive.id) }) { Text("Xóa") }
+                    }
+                }
+            }
+        }
+    }
+    if (showAddDialog) {
+        AddDriveOAuthDialog(
+            onDismiss = { showAddDialog = false },
+            onSave = { id, name, clientId, clientSecret ->
+                onAdd(id, name, clientId, clientSecret)
+                showAddDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddDriveOAuthDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String) -> Unit
+) {
+    var id by remember { mutableStateOf("drive01") }
+    var displayName by remember { mutableStateOf("Google Drive 01") }
+    var clientId by remember { mutableStateOf("") }
+    var clientSecret by remember { mutableStateOf("") }
+    val validClient = clientId.trim().endsWith(".apps.googleusercontent.com") && clientSecret.isNotBlank()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Kết nối Google Drive") },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { Text("Dùng OAuth Desktop client với redirect URI http://localhost:53682/.") }
+                item {
+                    OutlinedTextField(
+                        id,
+                        { id = it.lowercase().filter { char -> char.isLetterOrDigit() || char == '_' || char == '-' } },
+                        modifier = Modifier.fillMaxWidth(), label = { Text("Mã tài khoản") }, singleLine = true
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        displayName, { displayName = it }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Tên hiển thị") }, singleLine = true
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        clientId, { clientId = it.trim() }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text("OAuth client ID") }, singleLine = true
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        clientSecret, { clientSecret = it.trim() }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text("OAuth client secret") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = id.isNotBlank() && displayName.isNotBlank() && validClient,
+                onClick = { onSave(id.trim(), displayName.trim(), clientId.trim(), clientSecret.trim()) }
+            ) { Text("Đăng nhập Google") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+    )
 }
 
 @Composable
