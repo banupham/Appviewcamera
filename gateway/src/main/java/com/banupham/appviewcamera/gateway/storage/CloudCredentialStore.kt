@@ -35,6 +35,9 @@ class CloudCredentialStore(
         require(client.authUri.startsWith("https://") && client.tokenUri.startsWith("https://")) {
             "OAuth endpoint phải dùng HTTPS"
         }
+        require(client.redirectUri == "http://localhost:53682/") {
+            "Redirect URI phải là http://localhost:53682/"
+        }
         preferences.edit().putString(OAUTH_CLIENT, cipher.encrypt(JSONObject().apply {
             put("client_id", client.clientId)
             put("client_secret", client.clientSecret)
@@ -74,6 +77,13 @@ class CloudCredentialStore(
     }
 
     fun token(id: String): String? = preferences.getString(tokenKey(id), null)?.let(cipher::decrypt)
+
+    fun updateToken(id: String, oauthToken: String) {
+        require(accounts().any { it.id == id }) { "Không tìm thấy tài khoản Google Drive" }
+        require(oauthToken.length in 2..16_384) { "OAuth token không hợp lệ" }
+        JSONObject(oauthToken)
+        preferences.edit().putString(tokenKey(id), cipher.encrypt(oauthToken)).apply()
+    }
 
     fun activate(id: String): DriveAccount {
         val updated = accounts().map { it.copy(active = it.id == id) }
