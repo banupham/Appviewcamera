@@ -90,7 +90,7 @@ jobs:
             echo "$apk minSdk=$min_sdk"
             test -n "$min_sdk"
             test "$min_sdk" -le 29
-            verification="$("$apksigner" verify --verbose "$apk")"
+            verification="$("$apksigner" verify --verbose --min-sdk-version 23 "$apk")"
             echo "$verification"
             echo "$verification" | grep -F "Verified using v1 scheme (JAR signing): true"
             echo "$verification" | grep -F "Verified using v2 scheme (APK Signature Scheme v2): true"
