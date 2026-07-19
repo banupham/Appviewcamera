@@ -8,7 +8,9 @@ import com.banupham.appviewcamera.gateway.recording.PlaybackIndex
 import com.banupham.appviewcamera.gateway.recording.RecordingRepository
 import com.banupham.appviewcamera.gateway.recording.RecordingSettingsStore
 import com.banupham.appviewcamera.gateway.storage.CloudCredentialStore
+import com.banupham.appviewcamera.gateway.storage.GoogleDriveOAuthManager
 import com.banupham.appviewcamera.gateway.storage.GoogleDriveUploadWorker
+import com.banupham.appviewcamera.gateway.storage.GoogleOAuthClient
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
@@ -34,6 +36,7 @@ class GatewayHttpServer(
     private val recordings: RecordingRepository,
     private val recordingSettings: RecordingSettingsStore,
     private val cloudCredentials: CloudCredentialStore,
+    private val driveOAuth: GoogleDriveOAuthManager,
     private val driveUploader: GoogleDriveUploadWorker,
     private val onRecordingSettingsChanged: suspend () -> Unit
 ) : Closeable {
@@ -107,6 +110,35 @@ class GatewayHttpServer(
     private suspend fun storage(request: HttpRequest, path: String): HttpResponse {
         val suffix = path.removePrefix("/api/storage/")
         return when {
+            suffix == "oauth/config" && request.method == "PUT" -> {
+                val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+                cloudCredentials.saveOAuthClient(GoogleOAuthClient(
+                    clientId = body.getString("client_id").trim(),
+                    clientSecret = body.getString("client_secret").trim(),
+                    authUri = body.optString("auth_uri", "https://accounts.google.com/o/oauth2/v2/auth"),
+                    tokenUri = body.optString("token_uri", "https://oauth2.googleapis.com/token"),
+                    redirectUri = body.optString("redirect_uri", "http://localhost:53682/")
+                ))
+                HttpResponse.json(200, JSONObject()
+                    .put("configured", true)
+                    .put("client_id", body.getString("client_id").trim()))
+            }
+            suffix == "drives/oauth/start" && request.method == "POST" -> {
+                val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+                HttpResponse.json(201, driveOAuth.start(
+                    body.getString("id"),
+                    body.optString("display_name")
+                ).json())
+            }
+            suffix.startsWith("drives/oauth/") && request.method == "GET" -> {
+                val sessionId = decode(suffix.removePrefix("drives/oauth/"))
+                HttpResponse.json(200, driveOAuth.status(sessionId).json())
+            }
+            suffix.startsWith("drives/oauth/") && suffix.endsWith("/callback") && request.method == "POST" -> {
+                val sessionId = decode(suffix.removePrefix("drives/oauth/").removeSuffix("/callback"))
+                val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+                HttpResponse.json(200, driveOAuth.callback(sessionId, body.getString("path")))
+            }
             suffix == "drives" && request.method == "GET" -> HttpResponse.json(200, driveArray())
             suffix == "drives" && request.method == "POST" -> {
                 val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
@@ -133,6 +165,10 @@ class GatewayHttpServer(
                 when {
                     suffix.endsWith("/activate") && request.method == "POST" ->
                         HttpResponse.json(200, driveJson(cloudCredentials.activate(id)))
+                    suffix.endsWith("/refresh") && request.method == "POST" -> {
+                        driveOAuth.accessToken(id, forceRefresh = true)
+                        HttpResponse.json(200, driveJson(cloudCredentials.accounts().single { it.id == id }))
+                    }
                     request.method == "DELETE" && suffix == "drives/$id" ->
                         if (cloudCredentials.delete(id)) HttpResponse.json(200, JSONObject().put("deleted", true))
                         else HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy tài khoản Google Drive"))
@@ -176,7 +212,7 @@ class GatewayHttpServer(
                 .put("discovery", true)
                 .put("recording", true)
                 .put("playback", true)
-                .put("google_drive", false)
+                .put("google_drive", true)
                 .put("youtube", false))
         })
     }
