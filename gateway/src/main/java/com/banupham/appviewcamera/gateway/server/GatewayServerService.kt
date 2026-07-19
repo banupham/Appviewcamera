@@ -72,6 +72,7 @@ class GatewayServerService : Service() {
                 container.gatewayRuntimeState,
                 container.recordingRepository,
                 container.recordingSettings,
+                container.cloudCredentials,
                 onRecordingSettingsChanged = {
                     media.reconfigure(container.cameraRepository.list())
                 }
