@@ -221,7 +221,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 RefreshPayload(
                     gatewayStatus = api.status(),
                     cameras = api.cameras(),
-                    recordingStatus = api.recordingStatus()
+                    recordingStatus = api.recordingStatus(),
+                    drives = api.drives(),
+                    storageSummary = api.storageSummary()
                 )
             }.onSuccess { payload ->
                 if (_state.value.currentGatewayId != gatewayId) return@onSuccess
@@ -242,6 +244,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         config = collection.current ?: current.config,
                         cameras = cameras,
                         recordingStatus = payload.recordingStatus,
+                        drives = payload.drives,
+                        storageSummary = payload.storageSummary,
                         selectedCameraId = selected,
                         loading = false,
                         gatewayConnectionError = null,
@@ -309,8 +313,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(drives = drives, loading = false, message = "Đã lưu ${drive.displayName}") }
     }
 
-    fun authorizeDrive(remoteId: String, displayName: String) =
+    fun authorizeDrive(remoteId: String, displayName: String, clientId: String, clientSecret: String) =
         launchApiAction("Đang chuẩn bị đăng nhập Google…") { api ->
+            api.configureDriveOAuth(clientId, clientSecret)
             DriveOAuthCoordinator(getApplication(), api).authorize(remoteId, displayName)
             val account = api.refreshDrive(remoteId)
             _state.update {
@@ -581,7 +586,9 @@ private fun startOfToday(): Long = Calendar.getInstance().apply {
 private data class RefreshPayload(
     val gatewayStatus: GatewayStatus,
     val cameras: List<CameraSummary>,
-    val recordingStatus: RecordingStatus
+    val recordingStatus: RecordingStatus,
+    val drives: List<GoogleDriveAccount>,
+    val storageSummary: StorageSummary
 )
 
 internal fun ViewerUiState.activateGateway(
