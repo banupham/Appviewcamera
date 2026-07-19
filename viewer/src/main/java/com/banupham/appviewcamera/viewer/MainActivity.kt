@@ -162,7 +162,10 @@ private fun ViewerScreen(
                     onAdd = viewModel::authorizeDrive,
                     onRefresh = viewModel::refreshDrive,
                     onActivate = viewModel::activateDrive,
-                    onDelete = viewModel::deleteDrive
+                    onDelete = viewModel::deleteDrive,
+                    onAddYouTube = viewModel::authorizeYouTube,
+                    onReconnectYouTube = viewModel::reconnectYouTube,
+                    onDeleteYouTube = viewModel::deleteYouTubeAccount
                 )
                 ViewerSection.SETTINGS -> SettingsScreen(
                     state,
@@ -309,9 +312,13 @@ private fun StorageScreen(
     onAdd: (String, String, String, String) -> Unit,
     onRefresh: (String) -> Unit,
     onActivate: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onAddYouTube: (String, String, String, String, Int) -> Unit,
+    onReconnectYouTube: (String) -> Unit,
+    onDeleteYouTube: (String) -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
+    var showYouTubeDialog by remember { mutableStateOf(false) }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         state.storageSummary?.let { summary ->
             item {
@@ -324,9 +331,7 @@ private fun StorageScreen(
                 }
             }
         }
-        item {
-            Text("Client secret và token chỉ được gửi tới Gateway và lưu mã hóa bằng Android Keystore.")
-        }
+        item { Text("Client secret và token chỉ được gửi tới Gateway và lưu mã hóa bằng Android Keystore.") }
         item { Button(onClick = { showAddDialog = true }) { Text("Thêm Google Drive") } }
         if (state.drives.isEmpty()) item { Text("Chưa có tài khoản Google Drive.") }
         items(state.drives, key = { it.id }) { drive ->
@@ -343,6 +348,34 @@ private fun StorageScreen(
                 }
             }
         }
+        item { Text("YouTube Private", style = MaterialTheme.typography.titleLarge) }
+        state.youtubeStatus?.let { status ->
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(if (status.enabled) "Tài khoản YouTube đã kết nối" else "YouTube chưa được kết nối")
+                        Text("Batch ${status.targetDurationMinutes} phút • ${status.accountCount} tài khoản")
+                        status.warning?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        status.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
+        }
+        item { Button(onClick = { showYouTubeDialog = true }) { Text("Thêm YouTube Private") } }
+        if (state.youtubeAccounts.isEmpty()) item { Text("Chưa có tài khoản YouTube.") }
+        items(state.youtubeAccounts, key = { "youtube-${it.id}" }) { account ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(account.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text("${account.id} • ${account.status}")
+                    account.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onReconnectYouTube(account.id) }) { Text("Kết nối lại") }
+                        TextButton(onClick = { onDeleteYouTube(account.id) }) { Text("Xóa") }
+                    }
+                }
+            }
+        }
     }
     if (showAddDialog) {
         AddDriveOAuthDialog(
@@ -353,6 +386,55 @@ private fun StorageScreen(
             }
         )
     }
+    if (showYouTubeDialog) {
+        AddYouTubeOAuthDialog(
+            onDismiss = { showYouTubeDialog = false },
+            onSave = { id, name, clientId, clientSecret, minutes ->
+                onAddYouTube(id, name, clientId, clientSecret, minutes)
+                showYouTubeDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddYouTubeOAuthDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String, Int) -> Unit
+) {
+    var id by remember { mutableStateOf("youtube01") }
+    var displayName by remember { mutableStateOf("YouTube Private 01") }
+    var clientId by remember { mutableStateOf("") }
+    var clientSecret by remember { mutableStateOf("") }
+    var targetMinutes by remember { mutableStateOf(60) }
+    val validClient = clientId.trim().endsWith(".apps.googleusercontent.com") && clientSecret.isNotBlank()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Kết nối YouTube Private") },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { Text("OAuth Desktop client phải bật YouTube Data API v3. Video sẽ dùng chế độ Private.") }
+                item { OutlinedTextField(id, { id = it.lowercase().filter { ch -> ch.isLetterOrDigit() || ch == '_' || ch == '-' } }, modifier = Modifier.fillMaxWidth(), label = { Text("Mã tài khoản") }) }
+                item { OutlinedTextField(displayName, { displayName = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Tên hiển thị") }) }
+                item { OutlinedTextField(clientId, { clientId = it.trim() }, modifier = Modifier.fillMaxWidth(), label = { Text("OAuth client ID") }) }
+                item { OutlinedTextField(clientSecret, { clientSecret = it.trim() }, modifier = Modifier.fillMaxWidth(), label = { Text("OAuth client secret") }, visualTransformation = PasswordVisualTransformation()) }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(60, 90, 120).forEach { minutes ->
+                            FilterChip(selected = targetMinutes == minutes, onClick = { targetMinutes = minutes }, label = { Text("$minutes") })
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = id.isNotBlank() && displayName.isNotBlank() && validClient,
+                onClick = { onSave(id.trim(), displayName.trim(), clientId.trim(), clientSecret.trim(), targetMinutes) }
+            ) { Text("Đăng nhập Google") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+    )
 }
 
 @Composable
