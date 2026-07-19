@@ -126,6 +126,24 @@ class RecordingRepository(
         dao.markDriveFailed(clip.id, message.take(500), nowMs() + delayMs, nowMs())
     }
 
+    suspend fun youtubeCandidates(limit: Int = 1): List<RecordingClipEntity> =
+        dao.youtubeCandidates(nowMs(), limit)
+
+    suspend fun markYouTubeUploading(clip: RecordingClipEntity) {
+        dao.markYouTubeUploading(clip.id, nowMs())
+    }
+
+    suspend fun markYouTubeReady(clip: RecordingClipEntity, videoId: String) {
+        val endSeconds = ((clip.durationMs ?: 0L) / 1_000L).coerceAtLeast(0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        dao.markYouTubeReady(clip.id, videoId, "clip-${clip.id}", endSeconds, nowMs())
+    }
+
+    suspend fun markYouTubeFailed(clip: RecordingClipEntity, message: String) {
+        val attempts = clip.uploadAttempts + 1
+        val delayMs = (60_000L * (1L shl (attempts - 1).coerceAtMost(6))).coerceAtMost(21_600_000L)
+        dao.markYouTubeFailed(clip.id, message.take(500), nowMs() + delayMs, nowMs())
+    }
+
     suspend fun get(id: String): RecordingClipEntity? = dao.get(id)
 
     suspend fun setProtected(id: String, protected: Boolean): RecordingClipEntity? {
