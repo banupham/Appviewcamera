@@ -11,6 +11,8 @@ import com.banupham.appviewcamera.gateway.storage.CloudCredentialStore
 import com.banupham.appviewcamera.gateway.storage.GoogleDriveOAuthManager
 import com.banupham.appviewcamera.gateway.storage.GoogleDriveUploadWorker
 import com.banupham.appviewcamera.gateway.storage.GoogleOAuthClient
+import com.banupham.appviewcamera.gateway.youtube.YouTubeCredentialStore
+import com.banupham.appviewcamera.gateway.youtube.YouTubeOAuthManager
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
@@ -38,6 +40,8 @@ class GatewayHttpServer(
     private val cloudCredentials: CloudCredentialStore,
     private val driveOAuth: GoogleDriveOAuthManager,
     private val driveUploader: GoogleDriveUploadWorker,
+    private val youtubeCredentials: YouTubeCredentialStore,
+    private val youtubeOAuth: YouTubeOAuthManager,
     private val onRecordingSettingsChanged: suspend () -> Unit
 ) : Closeable {
     private val playback = PlaybackIndex(recordings)
@@ -99,12 +103,75 @@ class GatewayHttpServer(
             request.method == "GET" && path == "/api/playback/timeline" -> playbackTimeline(uri)
             path.startsWith("/api/playback/items/") -> playbackItem(request, uri, path)
             path.startsWith("/api/storage/") -> storage(request, path)
-            path.startsWith("/api/youtube/") -> HttpResponse.json(
-                501,
-                JSONObject().put("detail", "YouTube Private worker đang được cấu hình")
-            )
+            path.startsWith("/api/youtube/") -> youtube(request, path)
             else -> HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy endpoint"))
         }
+    }
+
+    private suspend fun youtube(request: HttpRequest, path: String): HttpResponse {
+        val suffix = path.removePrefix("/api/youtube/")
+        return when {
+            suffix == "status" && request.method == "GET" -> HttpResponse.json(200, youtubeStatus())
+            suffix == "config" && request.method == "PUT" -> {
+                val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+                youtubeCredentials.configure(
+                    body.optString("client_id"),
+                    body.optString("client_secret"),
+                    body.optInt("target_duration_minutes", 60)
+                )
+                HttpResponse.json(200, youtubeStatus())
+            }
+            suffix == "accounts" && request.method == "GET" -> HttpResponse.json(200, youtubeAccounts())
+            suffix == "accounts/oauth/start" && request.method == "POST" -> {
+                val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+                HttpResponse.json(201, youtubeOAuth.start(
+                    body.getString("id"),
+                    body.optString("display_name")
+                ).json())
+            }
+            suffix.startsWith("accounts/oauth/") && suffix.endsWith("/callback") && request.method == "POST" -> {
+                val sessionId = decode(suffix.removePrefix("accounts/oauth/").removeSuffix("/callback"))
+                val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+                HttpResponse.json(200, youtubeOAuth.callback(sessionId, body.getString("path")))
+            }
+            suffix.startsWith("accounts/oauth/") && request.method == "GET" -> {
+                val sessionId = decode(suffix.removePrefix("accounts/oauth/"))
+                HttpResponse.json(200, youtubeOAuth.status(sessionId).json())
+            }
+            suffix.startsWith("accounts/") && suffix.endsWith("/reconnect") && request.method == "POST" -> {
+                val accountId = decode(suffix.removePrefix("accounts/").removeSuffix("/reconnect"))
+                HttpResponse.json(201, youtubeOAuth.reconnect(accountId).json())
+            }
+            suffix.startsWith("accounts/") && request.method == "DELETE" -> {
+                val accountId = decode(suffix.removePrefix("accounts/"))
+                if (youtubeCredentials.delete(accountId)) HttpResponse.json(200, JSONObject().put("deleted", true))
+                else HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy tài khoản YouTube"))
+            }
+            else -> HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy endpoint YouTube"))
+        }
+    }
+
+    private fun youtubeAccounts(): JSONArray = JSONArray().apply {
+        youtubeCredentials.accounts().forEach { account -> put(JSONObject()
+            .put("id", account.id)
+            .put("display_name", account.displayName)
+            .put("active", account.active)
+            .put("status", account.status)
+            .put("last_error", account.lastError ?: JSONObject.NULL))
+        }
+    }
+
+    private fun youtubeStatus(): JSONObject {
+        val config = youtubeCredentials.config()
+        return JSONObject()
+            .put("enabled", config != null && youtubeCredentials.accounts().isNotEmpty())
+            .put("oauth_configured", config != null)
+            .put("account_count", youtubeCredentials.accounts().size)
+            .put("target_duration_minutes", config?.targetDurationMinutes ?: 60)
+            .put("estimated_uploads_per_day", 0)
+            .put("max_target_uploads_per_day", 80)
+            .put("warning", JSONObject.NULL)
+            .put("last_error", JSONObject.NULL)
     }
 
     private suspend fun storage(request: HttpRequest, path: String): HttpResponse {
@@ -213,7 +280,7 @@ class GatewayHttpServer(
                 .put("recording", true)
                 .put("playback", true)
                 .put("google_drive", true)
-                .put("youtube", false))
+                .put("youtube", true))
         })
     }
 
