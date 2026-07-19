@@ -156,27 +156,10 @@ class YouTubeBatchBuilder:
         temporary = batch_dir / "archive.mp4.part"
         output = batch_dir / "archive.mp4"
         completed = self.runner(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_file),
-            "-map",
-            "0",
-            "-c",
-            "copy",
-            "-movflags",
-            "+faststart",
-            "-f",
-            "mp4",
-            "-y",
-            str(temporary),
-        ],
+            [
+                "ffmpeg", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+                "-map", "0", "-c", "copy", "-movflags", "+faststart", "-y", str(temporary),
+            ],
             capture_output=True,
             text=True,
             timeout=max(300, len(paths) * 15),
