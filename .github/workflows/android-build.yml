@@ -46,18 +46,31 @@ jobs:
         run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
 
       - name: Verify Android 10 compatibility and stable signer
+        shell: bash
         run: |
-          for apk in \\
-            gateway/build/outputs/apk/debug/gateway-debug.apk \\
+          set -euo pipefail
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          aapt="$build_tools/aapt"
+          apksigner="$build_tools/apksigner"
+          test -x "$aapt"
+          test -x "$apksigner"
+
+          for apk in \
+            gateway/build/outputs/apk/debug/gateway-debug.apk \
             viewer/build/outputs/apk/debug/viewer-debug.apk; do
-            min_sdk="$(apkanalyzer manifest min-sdk "$apk")"
+            badging="$("$aapt" dump badging "$apk")"
+            echo "$badging" | grep -E "^package:|^sdkVersion:|^native-code:"
+            min_sdk="$(echo "$badging" | sed -n "s/^sdkVersion:'\([0-9][0-9]*\)'.*/\1/p")"
+            test -n "$min_sdk"
             test "$min_sdk" -le 29
-            apksigner verify --verbose --print-certs "$apk"
+            "$apksigner" verify --verbose --print-certs "$apk"
           done
-          gateway_signer="$(apksigner verify --print-certs gateway/build/outputs/apk/debug/gateway-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-          viewer_signer="$(apksigner verify --print-certs viewer/build/outputs/apk/debug/viewer-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+
+          gateway_signer="$("$apksigner" verify --print-certs gateway/build/outputs/apk/debug/gateway-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          viewer_signer="$("$apksigner" verify --print-certs viewer/build/outputs/apk/debug/viewer-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
           test -n "$gateway_signer"
           test "$gateway_signer" = "$viewer_signer"
+          echo "Stable APK signer SHA-256: $gateway_signer"
 
       - name: Save APKs for Android 10 install test
         uses: actions/upload-artifact@v7
