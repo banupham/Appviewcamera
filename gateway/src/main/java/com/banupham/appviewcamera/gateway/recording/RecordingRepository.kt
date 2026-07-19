@@ -133,6 +133,18 @@ class RecordingRepository(
         return dao.get(id)
     }
 
+    suspend fun restoreTarget(clip: RecordingClipEntity): File {
+        val target = File(root, clip.relativePath).canonicalFile
+        val canonicalRoot = root.canonicalFile
+        require(target.path.startsWith(canonicalRoot.path + File.separator)) { "Đường dẫn playback cache không hợp lệ" }
+        target.parentFile?.mkdirs()
+        return target
+    }
+
+    suspend fun markLocalRestored(clip: RecordingClipEntity) {
+        dao.markLocalRestored(clip.id, nowMs())
+    }
+
     suspend fun localFile(clip: RecordingClipEntity): File? {
         if (clip.localState != "AVAILABLE") return null
         val file = File(root, clip.relativePath).canonicalFile
