@@ -223,7 +223,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     cameras = api.cameras(),
                     recordingStatus = api.recordingStatus(),
                     drives = api.drives(),
-                    storageSummary = api.storageSummary()
+                    storageSummary = api.storageSummary(),
+                    youtubeAccounts = api.youtubeAccounts(),
+                    youtubeStatus = api.youtubeStatus()
                 )
             }.onSuccess { payload ->
                 if (_state.value.currentGatewayId != gatewayId) return@onSuccess
@@ -246,6 +248,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         recordingStatus = payload.recordingStatus,
                         drives = payload.drives,
                         storageSummary = payload.storageSummary,
+                        youtubeAccounts = payload.youtubeAccounts,
+                        youtubeStatus = payload.youtubeStatus,
                         selectedCameraId = selected,
                         loading = false,
                         gatewayConnectionError = null,
@@ -588,7 +592,9 @@ private data class RefreshPayload(
     val cameras: List<CameraSummary>,
     val recordingStatus: RecordingStatus,
     val drives: List<GoogleDriveAccount>,
-    val storageSummary: StorageSummary
+    val storageSummary: StorageSummary,
+    val youtubeAccounts: List<YouTubeAccount>,
+    val youtubeStatus: YouTubeArchiveStatus
 )
 
 internal fun ViewerUiState.activateGateway(
