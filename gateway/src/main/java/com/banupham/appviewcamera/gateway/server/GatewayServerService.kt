@@ -75,6 +75,8 @@ class GatewayServerService : Service() {
                 container.cloudCredentials,
                 container.driveOAuth,
                 container.driveUploader,
+                container.youtubeCredentials,
+                container.youtubeOAuth,
                 onRecordingSettingsChanged = {
                     media.reconfigure(container.cameraRepository.list())
                 }
