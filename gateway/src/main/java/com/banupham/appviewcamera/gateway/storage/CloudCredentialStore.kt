@@ -85,6 +85,15 @@ class CloudCredentialStore(
         preferences.edit().putString(tokenKey(id), cipher.encrypt(oauthToken)).apply()
     }
 
+    fun updateStatus(id: String, status: String, lastError: String? = null): DriveAccount {
+        val updated = accounts().map {
+            if (it.id == id) it.copy(status = status, lastError = lastError) else it
+        }
+        require(updated.any { it.id == id }) { "Không tìm thấy tài khoản Google Drive" }
+        writeAccounts(updated)
+        return updated.single { it.id == id }
+    }
+
     fun activate(id: String): DriveAccount {
         val updated = accounts().map { it.copy(active = it.id == id) }
         require(updated.any { it.active }) { "Không tìm thấy tài khoản Google Drive" }
