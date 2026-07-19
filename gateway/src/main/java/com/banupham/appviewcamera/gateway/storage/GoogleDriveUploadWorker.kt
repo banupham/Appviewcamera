@@ -7,6 +7,7 @@ import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class GoogleDriveUploadWorker(
     private val credentials: CloudCredentialStore,
