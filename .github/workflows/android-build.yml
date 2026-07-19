@@ -45,8 +45,7 @@ jobs:
       - name: Build Gateway and Viewer
         run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
 
-      - name: Diagnose Android 10 compatibility and stable signer
-        continue-on-error: true
+      - name: Verify Android 10 compatibility and APK signatures
         shell: bash
         run: |
           set -euo pipefail
@@ -67,8 +66,11 @@ jobs:
             echo "$apk minSdk=$min_sdk"
             test -n "$min_sdk"
             test "$min_sdk" -le 29
-            "$apksigner" verify --verbose "$apk"
-            signer="$("$apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ { print $2; exit }')"
+            verification="$("$apksigner" verify --verbose "$apk")"
+            echo "$verification"
+            echo "$verification" | grep -F "Verified using v1 scheme (JAR signing): true"
+            echo "$verification" | grep -F "Verified using v2 scheme (APK Signature Scheme v2): true"
+            signer="$(keytool -printcert -jarfile "$apk" | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -1)"
             echo "$apk signer=$signer"
             test -n "$signer"
             signers+=("$signer")
