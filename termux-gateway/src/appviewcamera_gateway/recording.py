@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -81,175 +81,6 @@ class RecordingManager:
             raise ValueError("Thư mục recording phải nằm trong APPVIEWCAMERA_HOME")
         root.mkdir(parents=True, exist_ok=True)
         return root
-    @property
-    def thumbnail_root(self) -> Path:
-        """
-        Thư mục thumbnail được giữ riêng với video.
-
-        Khi clip local bị xóa sau khi đã lưu Drive/YouTube,
-        thumbnail vẫn còn để Viewer hiển thị timeline.
-        """
-        path = (self.settings.home / "thumbnails").resolve()
-
-        if (
-            self.settings.home not in path.parents
-            and path != self.settings.home
-        ):
-            raise ValueError(
-                "Thư mục thumbnail phải nằm trong APPVIEWCAMERA_HOME"
-            )
-
-        path.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        return path
-
-
-    def thumbnail_path(
-        self,
-        clip_id: str
-    ) -> Path:
-        return self.thumbnail_root / f"{clip_id}.jpg"
-
-
-    def ensure_thumbnail(
-        self,
-        clip_id: str,
-        video_path: Path
-    ) -> Path | None:
-        """
-        Tạo thumbnail JPEG cho clip nếu chưa có.
-
-        Thumbnail được lấy tại giây đầu tiên của video và thu nhỏ
-        về chiều rộng 320px.
-        """
-        target = self.thumbnail_path(clip_id)
-
-        if (
-            target.is_file()
-            and target.stat().st_size > 0
-        ):
-            return target
-
-        if (
-            not video_path.is_file()
-            or video_path.stat().st_size <= 0
-        ):
-            return None
-
-        temporary = target.with_suffix(".tmp.jpg")
-
-        temporary.unlink(
-            missing_ok=True
-        )
-
-        try:
-            completed = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-v",
-                    "error",
-
-                    # Lấy hình gần đầu clip.
-                    "-ss",
-                    "1",
-
-                    "-i",
-                    str(video_path),
-
-                    # Chỉ lấy một frame và giữ đúng tỷ lệ.
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    "scale=320:-2",
-
-                    # Chất lượng JPEG.
-                    "-q:v",
-                    "4",
-
-                    "-y",
-                    str(temporary),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-
-            if (
-                completed.returncode != 0
-                or not temporary.is_file()
-                or temporary.stat().st_size <= 0
-            ):
-                LOGGER.warning(
-                    "Không tạo được thumbnail cho clip %s: %s",
-                    clip_id,
-                    completed.stderr.strip(),
-                )
-
-                temporary.unlink(
-                    missing_ok=True
-                )
-
-                return None
-
-            temporary.replace(target)
-
-            return target
-
-        except (
-            OSError,
-            subprocess.TimeoutExpired,
-        ) as error:
-            LOGGER.warning(
-                "Lỗi tạo thumbnail cho clip %s: %s",
-                clip_id,
-                error,
-            )
-
-            temporary.unlink(
-                missing_ok=True
-            )
-
-            return None
-
-
-    def playback_thumbnail_path(
-        self,
-        clip_id: str,
-        drive_store: GoogleDriveStore
-    ) -> Path | None:
-        """
-        Trả thumbnail đã có.
-
-        Nếu thumbnail chưa tồn tại nhưng video local/Drive vẫn còn,
-        tải hoặc mở video rồi tạo thumbnail bổ sung.
-        """
-        target = self.thumbnail_path(clip_id)
-
-        if (
-            target.is_file()
-            and target.stat().st_size > 0
-        ):
-            target.touch()
-
-            return target
-
-        video_path = self.playback_path(
-            clip_id,
-            drive_store,
-            "auto",
-        )
-
-        if video_path is None:
-            return None
-
-        return self.ensure_thumbnail(
-            clip_id,
-            video_path,
-        )
 
     def status(self) -> dict[str, Any]:
         config = self.config()
@@ -285,11 +116,6 @@ class RecordingManager:
                 and existing["modified_ns"] == stat.st_mtime_ns
                 and existing.get("clip_state") != "RECORDING"
             ):
-                self.ensure_thumbnail(
-                    str(existing["id"]),
-                    path,
-                )
-
                 continue
             started_at_ms = self._parse_started_at(path) or int(stat.st_mtime * 1000)
             clip = {
@@ -303,12 +129,6 @@ class RecordingManager:
                 "clip_state": "RECORDING" if is_recording else "LOCAL_PENDING",
             }
             self.database.upsert_clip(clip)
-
-            if not is_recording:
-                self.ensure_thumbnail(
-                    str(clip["id"]),
-                    path,
-                )
         self.database.mark_missing_clips(seen)
         return self.database.list_clips(limit=200)
 
@@ -381,15 +201,8 @@ class RecordingManager:
     @staticmethod
     def _parse_started_at(path: Path) -> int | None:
         try:
-            value = datetime.strptime(
-                path.stem,
-                "%Y-%m-%d_%H-%M-%S-%f"
-            ).replace(
-                tzinfo=timezone.utc
-            )
-
+            value = datetime.strptime(path.stem, "%Y-%m-%d_%H-%M-%S-%f")
             return int(value.timestamp() * 1000)
-
         except ValueError:
             return None
 
