@@ -45,6 +45,29 @@ jobs:
       - name: Build Gateway and Viewer
         run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
 
+      - name: Verify Android 10 compatibility and stable signer
+        run: |
+          for apk in \\
+            gateway/build/outputs/apk/debug/gateway-debug.apk \\
+            viewer/build/outputs/apk/debug/viewer-debug.apk; do
+            min_sdk="$(apkanalyzer manifest min-sdk "$apk")"
+            test "$min_sdk" -le 29
+            apksigner verify --verbose --print-certs "$apk"
+          done
+          gateway_signer="$(apksigner verify --print-certs gateway/build/outputs/apk/debug/gateway-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          viewer_signer="$(apksigner verify --print-certs viewer/build/outputs/apk/debug/viewer-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          test -n "$gateway_signer"
+          test "$gateway_signer" = "$viewer_signer"
+
+      - name: Save APKs for Android 10 install test
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-10-install-input
+          path: |
+            gateway/build/outputs/apk/debug/gateway-debug.apk
+            viewer/build/outputs/apk/debug/viewer-debug.apk
+          if-no-files-found: error
+
       - name: Upload Gateway APK
         uses: actions/upload-artifact@v7
         with:
@@ -68,3 +91,35 @@ jobs:
             **/build/reports/**
             **/build/test-results/**
           if-no-files-found: ignore
+
+  android-10-install:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v7
+        with:
+          name: android-10-install-input
+          path: apks
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS="static_node=kvm"' \\
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and update APKs on Android 10
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install apks/viewer/build/outputs/apk/debug/viewer-debug.apk
+            adb install -r apks/viewer/build/outputs/apk/debug/viewer-debug.apk
+            adb install apks/gateway/build/outputs/apk/debug/gateway-debug.apk
+            adb install -r apks/gateway/build/outputs/apk/debug/gateway-debug.apk
+            adb shell pm path com.banupham.appviewcamera.viewer
+            adb shell pm path com.banupham.appviewcamera.gateway
