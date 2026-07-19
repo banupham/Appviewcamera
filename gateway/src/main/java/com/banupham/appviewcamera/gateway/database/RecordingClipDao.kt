@@ -96,6 +96,12 @@ interface RecordingClipDao {
     )
     suspend fun markLocalDeleted(id: String, nowMs: Long)
 
+    @Query(
+        "UPDATE recording_clips SET localState = 'AVAILABLE', localCachedAtMs = :nowMs, " +
+            "localDeletedAtMs = NULL, clipState = 'LOCAL_CACHE', stateUpdatedAtMs = :nowMs WHERE id = :id"
+    )
+    suspend fun markLocalRestored(id: String, nowMs: Long): Int
+
     @Query("UPDATE recording_clips SET localState = 'MISSING', stateUpdatedAtMs = :nowMs WHERE id = :id AND localState = 'AVAILABLE'")
     suspend fun markMissing(id: String, nowMs: Long)
 }
