@@ -74,6 +74,7 @@ class GoogleDriveOAuthManager(
             ))
             val normalized = normalizeToken(token, null)
             credentials.saveAccount(session.remoteId, session.displayName, normalized.toString())
+            credentials.updateStatus(session.remoteId, "ONLINE")
             session.current = session.snapshot("COMPLETE", null, null)
             proxyResponse(200, "Đã kết nối Google Drive. Có thể đóng trang này.")
         }.getOrElse { error ->
@@ -87,6 +88,7 @@ class GoogleDriveOAuthManager(
         val accessToken = stored.optString("access_token")
         val expiresAt = stored.optLong("expires_at_ms", 0L)
         if (!forceRefresh && accessToken.isNotBlank() && (expiresAt == 0L || expiresAt > nowMs() + REFRESH_MARGIN_MS)) {
+            credentials.updateStatus(accountId, "ONLINE")
             return accessToken
         }
         val refreshToken = stored.optString("refresh_token")
@@ -100,6 +102,7 @@ class GoogleDriveOAuthManager(
         ))
         val normalized = normalizeToken(refreshed, refreshToken)
         credentials.updateToken(accountId, normalized.toString())
+        credentials.updateStatus(accountId, "ONLINE")
         return normalized.getString("access_token")
     }
 
