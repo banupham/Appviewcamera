@@ -53,6 +53,22 @@ class RtspUrlFactoryTest {
     }
 
     @Test
+    fun preservesPasswordContainingAtAndDigitsFromPastedCameraUrl() {
+        val pasted = "rtsp://admin:Vin@2026@192.168.11.207:554/Streamings/Channels/101"
+
+        assertTrue(RtspUrlFactory.isValid(pasted))
+        assertEquals(RtspCredentials("admin", "Vin@2026"), RtspUrlFactory.credentials(pasted))
+        assertEquals(
+            "rtsp://192.168.11.207:554/Streamings/Channels/101",
+            RtspUrlFactory.withoutCredentials(pasted)
+        )
+        assertEquals(
+            "rtsp://admin:Vin%402026@192.168.11.207:554/Streamings/Channels/101",
+            RtspUrlFactory.normalize(pasted, "192.168.11.207", 554)
+        )
+    }
+
+    @Test
     fun normalizesFullUrlToExplicitIpAndPortWithoutLosingVendorQuery() {
         assertEquals(
             "rtsp://admin:secret@192.168.1.20:8554/cam/realmonitor?channel=1&subtype=0",
