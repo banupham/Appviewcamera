@@ -79,6 +79,46 @@ interface RecordingClipDao {
     )
     suspend fun markDriveFailed(id: String, error: String, nextRetryMs: Long, nowMs: Long): Int
 
+    @Query(
+        """
+        SELECT * FROM recording_clips
+        WHERE uploadState = 'UPLOADED' AND clipState != 'RECORDING'
+          AND (youtubeStatus IN ('NOT_CONFIGURED', 'PENDING')
+            OR (youtubeStatus = 'FAILED' AND nextRetryMs <= :nowMs))
+        ORDER BY startedAtMs ASC LIMIT :limit
+        """
+    )
+    suspend fun youtubeCandidates(nowMs: Long, limit: Int): List<RecordingClipEntity>
+
+    @Query(
+        "UPDATE recording_clips SET youtubeStatus = 'UPLOADING', youtubeLastError = NULL, " +
+            "youtubeUpdatedAtMs = :nowMs, stateUpdatedAtMs = :nowMs WHERE id = :id"
+    )
+    suspend fun markYouTubeUploading(id: String, nowMs: Long): Int
+
+    @Query(
+        """
+        UPDATE recording_clips SET youtubeStatus = 'YOUTUBE_READY', youtubeVideoId = :videoId,
+            youtubeBatchId = :batchId, youtubeStartOffsetSeconds = 0,
+            youtubeEndOffsetSeconds = :endOffsetSeconds, youtubeLastError = NULL,
+            youtubeUpdatedAtMs = :nowMs, stateUpdatedAtMs = :nowMs
+        WHERE id = :id
+        """
+    )
+    suspend fun markYouTubeReady(
+        id: String,
+        videoId: String,
+        batchId: String,
+        endOffsetSeconds: Int,
+        nowMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE recording_clips SET youtubeStatus = 'FAILED', youtubeLastError = :error, " +
+            "nextRetryMs = :nextRetryMs, youtubeUpdatedAtMs = :nowMs, stateUpdatedAtMs = :nowMs WHERE id = :id"
+    )
+    suspend fun markYouTubeFailed(id: String, error: String, nextRetryMs: Long, nowMs: Long): Int
+
     @Upsert
     suspend fun upsert(clip: RecordingClipEntity)
 
