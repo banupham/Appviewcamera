@@ -42,26 +42,18 @@ jobs:
       - name: Run Android lint
         run: ./gradlew :gateway:lint :viewer:lint --stacktrace
 
-      - name: Build Gateway and Viewer
-        run: ./gradlew :gateway:assembleDebug :viewer:assembleDebug --stacktrace
+      - name: Build unsigned Gateway and Viewer release APKs
+        run: ./gradlew :gateway:assembleRelease :viewer:assembleRelease --stacktrace
 
-      - name: Sign APKs with v1 and v2 for Android 10 OEM compatibility
+      - name: Sign release APKs with v1 and v2 for Android 10 OEM compatibility
         shell: bash
         run: |
           set -euo pipefail
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          for apk in \
-            gateway/build/outputs/apk/debug/gateway-debug.apk \
-            viewer/build/outputs/apk/debug/viewer-debug.apk; do
-            signed_apk="${apk%.apk}-signed.apk"
-            jarsigner \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android \
-              -keypass android \
-              -sigalg SHA256withRSA \
-              -digestalg SHA-256 \
-              "$apk" \
-              androiddebugkey
+          for module in gateway viewer; do
+            unsigned_apk="$module/build/outputs/apk/release/$module-release-unsigned.apk"
+            signed_apk="$module/build/outputs/apk/release/$module-release.apk"
+            test -f "$unsigned_apk"
             "$apksigner" sign \
               --ks "$HOME/.android/debug.keystore" \
               --ks-key-alias androiddebugkey \
@@ -72,8 +64,7 @@ jobs:
               --v2-signing-enabled true \
               --v3-signing-enabled false \
               --out "$signed_apk" \
-              "$apk"
-            mv "$signed_apk" "$apk"
+              "$unsigned_apk"
           done
 
       - name: Verify Android 10 compatibility and APK signatures
@@ -89,8 +80,8 @@ jobs:
 
           declare -a signers=()
           for apk in \
-            gateway/build/outputs/apk/debug/gateway-debug.apk \
-            viewer/build/outputs/apk/debug/viewer-debug.apk; do
+            gateway/build/outputs/apk/release/gateway-release.apk \
+            viewer/build/outputs/apk/release/viewer-release.apk; do
             badging="$("$aapt" dump badging "$apk")"
             echo "$badging" | grep -E "^package:|^sdkVersion:" || true
             min_sdk="$(echo "$badging" | sed -n "s/^sdkVersion:'\([0-9][0-9]*\)'.*/\1/p")"
@@ -115,22 +106,22 @@ jobs:
         with:
           name: android-10-install-input
           path: |
-            gateway/build/outputs/apk/debug/gateway-debug.apk
-            viewer/build/outputs/apk/debug/viewer-debug.apk
+            gateway/build/outputs/apk/release/gateway-release.apk
+            viewer/build/outputs/apk/release/viewer-release.apk
           if-no-files-found: error
 
       - name: Upload Gateway APK
         uses: actions/upload-artifact@v7
         with:
           name: AppView-Android-Gateway
-          path: gateway/build/outputs/apk/debug/gateway-debug.apk
+          path: gateway/build/outputs/apk/release/gateway-release.apk
           if-no-files-found: error
 
       - name: Upload Viewer APK
         uses: actions/upload-artifact@v7
         with:
           name: AppView-Viewer
-          path: viewer/build/outputs/apk/debug/viewer-debug.apk
+          path: viewer/build/outputs/apk/release/viewer-release.apk
           if-no-files-found: error
 
       - name: Upload reports after failure
@@ -166,9 +157,9 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
-            adb install apks/viewer/build/outputs/apk/debug/viewer-debug.apk
-            adb install -r apks/viewer/build/outputs/apk/debug/viewer-debug.apk
-            adb install apks/gateway/build/outputs/apk/debug/gateway-debug.apk
-            adb install -r apks/gateway/build/outputs/apk/debug/gateway-debug.apk
+            adb install apks/viewer/build/outputs/apk/release/viewer-release.apk
+            adb install -r apks/viewer/build/outputs/apk/release/viewer-release.apk
+            adb install apks/gateway/build/outputs/apk/release/gateway-release.apk
+            adb install -r apks/gateway/build/outputs/apk/release/gateway-release.apk
             adb shell pm path com.banupham.appviewcamera.viewer
             adb shell pm path com.banupham.appviewcamera.gateway
