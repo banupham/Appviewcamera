@@ -9,6 +9,7 @@ import java.io.File
 import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
@@ -43,6 +44,7 @@ class RecordingRepository(
             val modifiedMs = file.lastModified()
             val sizeBytes = file.length()
             val existing = dao.getByPath(relative)
+            val parsedStartedAtMs = parseStartedAt(file.nameWithoutExtension)
             val recording = nowMs() - modifiedMs < STABLE_AFTER_MS
             if (existing != null && existing.modifiedMs == modifiedMs && existing.sizeBytes == sizeBytes &&
                 ((recording && existing.clipState == "RECORDING") || (!recording && existing.clipState != "RECORDING"))) {
@@ -57,13 +59,15 @@ class RecordingRepository(
                     id = stableId(relative),
                     cameraId = cameraId,
                     relativePath = relative,
-                    startedAtMs = parseStartedAt(file.nameWithoutExtension) ?: modifiedMs,
+                    startedAtMs = parsedStartedAtMs ?: modifiedMs,
                     durationMs = null,
                     sizeBytes = sizeBytes,
                     modifiedMs = modifiedMs
                 )).copy(
                     cameraId = cameraId,
-                    startedAtMs = existing?.startedAtMs ?: parseStartedAt(file.nameWithoutExtension) ?: modifiedMs,
+                    // MediaMTX filenames are UTC. Reapply the parsed value so existing rows
+                    // created by older builds are corrected during the next scan.
+                    startedAtMs = parsedStartedAtMs ?: existing?.startedAtMs ?: modifiedMs,
                     durationMs = if (recording) null else probeDurationMs(file),
                     sizeBytes = sizeBytes,
                     modifiedMs = modifiedMs,
@@ -207,7 +211,7 @@ class RecordingRepository(
             .take(12)
             .joinToString("") { "%02x".format(it) }
 
-        fun parseStartedAt(stem: String, zoneId: ZoneId = ZoneId.systemDefault()): Long? = try {
+        fun parseStartedAt(stem: String, zoneId: ZoneId = ZoneOffset.UTC): Long? = try {
             LocalDateTime.parse(stem, FILE_TIME).atZone(zoneId).toInstant().toEpochMilli()
         } catch (_: DateTimeParseException) {
             null
