@@ -7,6 +7,7 @@ import com.banupham.appviewcamera.gateway.camera.CameraValidator
 import com.banupham.appviewcamera.gateway.recording.PlaybackIndex
 import com.banupham.appviewcamera.gateway.recording.RecordingRepository
 import com.banupham.appviewcamera.gateway.recording.RecordingSettingsStore
+import com.banupham.appviewcamera.gateway.storage.CloudCredentialStore
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
@@ -31,6 +32,7 @@ class GatewayHttpServer(
     private val runtimeState: GatewayRuntimeState,
     private val recordings: RecordingRepository,
     private val recordingSettings: RecordingSettingsStore,
+    private val cloudCredentials: CloudCredentialStore,
     private val onRecordingSettingsChanged: suspend () -> Unit
 ) : Closeable {
     private val playback = PlaybackIndex(recordings)
@@ -91,13 +93,66 @@ class GatewayHttpServer(
             request.method == "GET" && path == "/api/playback/days" -> playbackDays(uri)
             request.method == "GET" && path == "/api/playback/timeline" -> playbackTimeline(uri)
             path.startsWith("/api/playback/items/") -> playbackItem(request, uri, path)
-            path.startsWith("/api/storage/") || path.startsWith("/api/youtube/") -> HttpResponse.json(
-                    501,
-                    JSONObject().put("detail", "Lớp lưu trữ đám mây Android Gateway đang được cấu hình")
-                )
+            path.startsWith("/api/storage/") -> storage(request, path)
+            path.startsWith("/api/youtube/") -> HttpResponse.json(
+                501,
+                JSONObject().put("detail", "YouTube Private worker đang được cấu hình")
+            )
             else -> HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy endpoint"))
         }
     }
+
+    private suspend fun storage(request: HttpRequest, path: String): HttpResponse {
+        val suffix = path.removePrefix("/api/storage/")
+        return when {
+            suffix == "drives" && request.method == "GET" -> HttpResponse.json(200, driveArray())
+            suffix == "drives" && request.method == "POST" -> {
+                val body = JSONObject(request.body.toString(StandardCharsets.UTF_8))
+                val account = cloudCredentials.saveAccount(
+                    body.getString("id"),
+                    body.optString("display_name"),
+                    body.getString("oauth_token")
+                )
+                HttpResponse.json(201, driveJson(account))
+            }
+            suffix == "summary" && request.method == "GET" -> {
+                val accounts = cloudCredentials.accounts()
+                val recording = recordings.status()
+                HttpResponse.json(200, JSONObject()
+                    .put("drive_count", accounts.size)
+                    .put("online_drive_count", accounts.count { it.status == "ONLINE" })
+                    .put("total_bytes", 0)
+                    .put("used_bytes", recording.localBytes)
+                    .put("free_bytes", recording.diskFreeBytes)
+                    .put("collecting_statistics", true))
+            }
+            suffix.startsWith("drives/") -> {
+                val id = decode(suffix.removePrefix("drives/").substringBefore('/'))
+                when {
+                    suffix.endsWith("/activate") && request.method == "POST" ->
+                        HttpResponse.json(200, driveJson(cloudCredentials.activate(id)))
+                    request.method == "DELETE" && suffix == "drives/$id" ->
+                        if (cloudCredentials.delete(id)) HttpResponse.json(200, JSONObject().put("deleted", true))
+                        else HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy tài khoản Google Drive"))
+                    else -> HttpResponse.json(405, JSONObject().put("detail", "Method không được hỗ trợ"))
+                }
+            }
+            else -> HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy endpoint storage"))
+        }
+    }
+
+    private fun driveArray(): JSONArray = JSONArray().apply {
+        cloudCredentials.accounts().forEach { put(driveJson(it)) }
+    }
+
+    private fun driveJson(account: com.banupham.appviewcamera.gateway.storage.DriveAccount): JSONObject =
+        JSONObject()
+            .put("id", account.id)
+            .put("display_name", account.displayName)
+            .put("active", account.active)
+            .put("configured", true)
+            .put("status", account.status)
+            .put("last_error", account.lastError ?: JSONObject.NULL)
 
     private suspend fun status(): HttpResponse {
         val cameras = repository.list()
