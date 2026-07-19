@@ -49,7 +49,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$apksigner"
           for module in gateway viewer; do
             unsigned_apk="$module/build/outputs/apk/release/$module-release-unsigned.apk"
             signed_apk="$module/build/outputs/apk/release/$module-release.apk"
@@ -71,8 +72,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aapt="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
-          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$apksigner"
           echo "aapt=$aapt"
           echo "apksigner=$apksigner"
           test -x "$aapt"
