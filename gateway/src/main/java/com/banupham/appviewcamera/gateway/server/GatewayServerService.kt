@@ -95,6 +95,7 @@ class GatewayServerService : Service() {
                     val cameraIds = container.cameraRepository.list().map { it.relayPath }.toSet()
                     val retentionMinutes = container.recordingSettings.get().localRetentionMinutes
                     runCatching { container.recordingRepository.scan(cameraIds, retentionMinutes) }.getOrNull()?.let { status ->
+                        runCatching { container.driveUploader.uploadPending() }
                         if (status.storagePressure && container.recordingSettings.get().effectiveEnabled) {
                             container.recordingSettings.pauseForStorage()
                             media.reconfigure(container.cameraRepository.list())
