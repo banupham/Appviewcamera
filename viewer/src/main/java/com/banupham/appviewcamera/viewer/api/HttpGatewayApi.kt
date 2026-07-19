@@ -63,6 +63,15 @@ class HttpGatewayApi(private val config: GatewayConfig) : GatewayApi {
         return GatewayJsonParser.drives("[${request("POST", "/api/storage/drives", body)}]").single()
     }
 
+    override suspend fun configureDriveOAuth(clientId: String, clientSecret: String) {
+        val body = JSONObject()
+            .put("client_id", clientId.trim())
+            .put("client_secret", clientSecret.trim())
+            .put("redirect_uri", "http://localhost:53682/")
+            .toString()
+        request("PUT", "/api/storage/oauth/config", body, STORAGE_TIMEOUT_MS)
+    }
+
     override suspend fun startDriveOAuth(remoteId: String, displayName: String): DriveOAuthSession {
         val body = JSONObject().apply {
             put("id", remoteId)
