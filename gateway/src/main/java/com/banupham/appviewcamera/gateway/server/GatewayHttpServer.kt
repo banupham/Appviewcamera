@@ -1,5 +1,7 @@
 package com.banupham.appviewcamera.gateway.server
 
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import com.banupham.appviewcamera.gateway.camera.Camera
 import com.banupham.appviewcamera.gateway.camera.CameraDraft
 import com.banupham.appviewcamera.gateway.camera.CameraRepository
@@ -386,6 +388,9 @@ class GatewayHttpServer(
         }
         val suffix = path.removePrefix("/api/playback/items/")
         return when {
+            suffix.endsWith("/thumbnail") -> playbackThumbnail(
+                decode(suffix.removeSuffix("/thumbnail"))
+            )
             suffix.endsWith("/sources") -> playback.sources(decode(suffix.removeSuffix("/sources")))
                 ?.let { HttpResponse.json(200, it) }
                 ?: HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy playback item"))
@@ -404,6 +409,46 @@ class GatewayHttpServer(
             else -> playback.item(decode(suffix))?.let { HttpResponse.json(200, it) }
                 ?: HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy playback item"))
         }
+    }
+
+    private suspend fun playbackThumbnail(id: String): HttpResponse {
+        val clip = recordings.get(id)
+            ?: return HttpResponse.json(404, JSONObject().put("detail", "Không tìm thấy playback item"))
+        val file = recordings.localFile(clip)
+            ?: return HttpResponse.json(404, JSONObject().put("detail", "Clip không còn trong cache local"))
+        val jpeg = runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(file.absolutePath)
+                val frame = retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: error("Không đọc được khung hình thumbnail")
+                try {
+                    val width = minOf(frame.width, THUMBNAIL_WIDTH)
+                    val height = (frame.height.toLong() * width / frame.width.coerceAtLeast(1))
+                        .coerceAtLeast(1).toInt()
+                    val thumbnail = if (width == frame.width) frame else {
+                        Bitmap.createScaledBitmap(frame, width, height, true)
+                    }
+                    try {
+                        ByteArrayOutputStream().use { output ->
+                            check(thumbnail.compress(Bitmap.CompressFormat.JPEG, 72, output)) {
+                                "Không mã hóa được thumbnail"
+                            }
+                            output.toByteArray()
+                        }
+                    } finally {
+                        if (thumbnail !== frame) thumbnail.recycle()
+                    }
+                } finally {
+                    frame.recycle()
+                }
+            } finally {
+                retriever.release()
+            }
+        }.getOrElse {
+            return HttpResponse.json(500, JSONObject().put("detail", it.message ?: "Không tạo được thumbnail"))
+        }
+        return HttpResponse(200, "image/jpeg", jpeg)
     }
 
     private fun queryParameters(uri: URI): Map<String, String> = uri.rawQuery.orEmpty()
@@ -515,6 +560,10 @@ class GatewayHttpServer(
     private fun authorized(header: String): Boolean {
         val supplied = header.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ").orEmpty()
         return MessageDigest.isEqual(settings.apiToken.toByteArray(), supplied.toByteArray())
+    }
+
+    private companion object {
+        const val THUMBNAIL_WIDTH = 240
     }
 
     override fun close() {
