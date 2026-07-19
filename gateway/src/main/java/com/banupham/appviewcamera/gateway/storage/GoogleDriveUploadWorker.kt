@@ -31,6 +31,39 @@ class GoogleDriveUploadWorker(
         }
     }
 
+    suspend fun restoreForPlayback(clipId: String): File? {
+        val clip = recordings.get(clipId) ?: return null
+        recordings.localFile(clip)?.let { return it }
+        val token = clip.remoteId?.let(credentials::token).orEmpty()
+        val accessToken = runCatching { JSONObject(token).optString("access_token") }.getOrDefault("")
+        val remoteFileId = clip.remoteFileId ?: return null
+        if (accessToken.isBlank()) return null
+        val target = recordings.restoreTarget(clip)
+        return runCatching {
+            download(accessToken, remoteFileId, target)
+            require(target.length() == clip.sizeBytes) { "Kích thước playback cache không khớp Drive" }
+            recordings.markLocalRestored(clip)
+            target
+        }.getOrNull()
+    }
+
+    private suspend fun download(accessToken: String, fileId: String, target: File) = withContext(Dispatchers.IO) {
+        val part = File(target.parentFile, target.name + ".part")
+        val connection = (URL("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media")
+            .openConnection() as HttpURLConnection)
+        try {
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 120_000
+            connection.setRequestProperty("Authorization", "Bearer " + accessToken)
+            require(connection.responseCode in 200..299) { "Drive download không thành công" }
+            connection.inputStream.use { input -> part.outputStream().use { input.copyTo(it) } }
+            require(part.renameTo(target)) { "Không thể hoàn tất playback cache" }
+        } finally {
+            connection.disconnect()
+            if (part.exists()) part.delete()
+        }
+    }
+
     private suspend fun upload(accessToken: String, file: File, remotePath: String): DriveUpload =
         withContext(Dispatchers.IO) {
             val boundary = "appview-${UUID.randomUUID()}"
