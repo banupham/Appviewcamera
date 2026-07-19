@@ -114,9 +114,6 @@ class PlaybackIndex:
             status = "UNAVAILABLE"
         return {
             "id": str(row["id"]),
-            "thumbnail_url": self._thumbnail_url(
-                str(row["id"])
-            ),
             "camera_id": str(row["camera_id"]),
             "start_time": start_ms,
             "end_time": start_ms + (duration_ms or 0),
@@ -143,16 +140,6 @@ class PlaybackIndex:
     @staticmethod
     def _youtube_status(row: dict) -> str:
         return str(row.get("youtube_status") or row.get("youtube_state") or "NOT_CONFIGURED")
-        
-    @staticmethod
-    def _thumbnail_url(
-        item_id: str
-    ) -> str:
-        return (
-            "/api/playback/items/"
-            f"{quote(item_id, safe='')}"
-            "/thumbnail"
-        )
 
     @staticmethod
     def _stream_url(item_id: str, source: str) -> str:
